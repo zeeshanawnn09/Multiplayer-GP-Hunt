@@ -4,6 +4,7 @@ using Photon.Realtime;
 using System.Collections.Generic;
 using UnityEngine.UIElements;
 using TMPro;
+using UnityEngine.SceneManagement;
 
 
 public class LobbyMenu : MonoBehaviourPunCallbacks
@@ -92,7 +93,9 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
             }
             
 
-            roomPanels[i].GetComponentInChildren<TMP_Text>().text = roomsInfo[i].Name + ": " + roomsInfo[i].PlayerCount + "/" + roomsInfo[i].MaxPlayers;
+            roomPanels[i].GetComponentInChildren<TMP_Text>().text = 
+                roomsInfo[i].Name + ": " + roomsInfo[i].PlayerCount + "/" + roomsInfo[i].MaxPlayers;
+            roomPanels[i].GetComponent<RoomPanel>().SetRoomName(roomsInfo[i].Name);
         }
     }
 
@@ -134,4 +137,15 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     {
         regionText.color = Color.white;
     }
+
+    public override void OnJoinedRoom()
+    {
+        if (PhotonNetwork.IsMasterClient)
+        {
+            PhotonNetwork.LoadLevel(1);
+        }
+        
+        //SceneManager.LoadScene("Test");
+    }
+
 }
