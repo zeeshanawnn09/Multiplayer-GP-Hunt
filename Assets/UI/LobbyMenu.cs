@@ -15,6 +15,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     public ScrollView scrollView;
     public GameObject roomPanelClass;
     public Transform scrollViewTransform;
+    public GameObject playerCharacter;
 
     private string gameVer = "0.0";
     private List<RoomInfo>roomsInfo = new List<RoomInfo>();
@@ -39,21 +40,23 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         statusText.text = "Connection status: " + PhotonNetwork.NetworkClientState;
     }
 
+    //Join lobby on connection to master
     public override void OnConnectedToMaster()
     {
         regionText.text = "Server region: " + PhotonNetwork.CloudRegion;
         PhotonNetwork.JoinLobby(TypedLobby.Default);
     }
 
+    //Updates to room list
     public override void OnRoomListUpdate(List<RoomInfo> roomList)
     {
-        //print(roomsInfo.Count);
         roomsInfo = roomList;
-        //print(roomsInfo.Count);
         UpdateDisplayedRooms();
-        ColourStart();
+        //For testing, to signify an update to the room list
+        //ColourStart();
     }
 
+    //Create a new room
     public void NewRoom()
     {
         string inputName = iFNewRoom.text;
@@ -65,8 +68,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
             roomOptions.MaxPlayers = (byte)4;
 
             PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
-            //UpdateDisplayedRooms();
-            //RemoteRefresh();
+
             if (PhotonNetwork.NetworkClientState != ClientState.Joined
             && PhotonNetwork.NetworkClientState != ClientState.Joining)
             {
@@ -76,13 +78,12 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         
     }
 
+    //Create a UI panel for each room
     private void UpdateDisplayedRooms()
     {
-        //print("UpdateRooms");
         print(roomsInfo.Count);
         for (int i = 0; i < roomsInfo.Count; i++)
         {
-            //print("RoomInfo");
             
             if (i >= roomPanels.Count)
             {
@@ -99,6 +100,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         }
     }
 
+    //Refresh the lobby
     public void RefreshLobby()
     {
         if (PhotonNetwork.IsConnected)
@@ -111,22 +113,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         }
     }
 
-    [PunRPC]
-    private void RemoteRefresh()
-    {
-        statusText.color = Color.green;
-        if (PhotonNetwork.NetworkClientState != ClientState.Joined 
-            && PhotonNetwork.NetworkClientState != ClientState.Joining)
-        {
-            RefreshLobby();
-        }
-        if (photonView.IsMine)
-        {
-            photonView.RPC("RemoteRefresh", RpcTarget.OthersBuffered);
-            
-        }
-    }
-
+    //Text colour change for testing
     private void ColourStart()
     {
         regionText.color = Color.cyan;
@@ -138,14 +125,13 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         regionText.color = Color.white;
     }
 
+    //On joining a room, load the level if master client (AutomaticallySyncScene = true)
     public override void OnJoinedRoom()
     {
         if (PhotonNetwork.IsMasterClient)
         {
             PhotonNetwork.LoadLevel(1);
         }
-        
-        //SceneManager.LoadScene("Test");
     }
 
 }

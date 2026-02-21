@@ -1765,6 +1765,7 @@ MonoBehaviour:
   iFNewRoom: {fileID: 1943670205}
   roomPanelClass: {fileID: 643447245726650934, guid: 425a3b35ccaeb7f459d9efec9f44b535, type: 3}
   scrollViewTransform: {fileID: 1394472195}
+  playerCharacter: {fileID: 4879892127143676765, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
 --- !u!114 &1417911209
 MonoBehaviour:
   m_ObjectHideFlags: 0

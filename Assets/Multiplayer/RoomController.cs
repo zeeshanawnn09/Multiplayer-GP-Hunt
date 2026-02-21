@@ -11,60 +11,65 @@ public class RoomController : MonoBehaviourPunCallbacks
     [SerializeField]
     GameObject ui;
 
+    [SerializeField]
+    Camera playerCam;
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         PhotonNetwork.AutomaticallySyncScene = true;
         
-        if(PhotonNetwork.CurrentRoom.PlayerCount <= 1)
+        //Spawn first player after master client loads level
+        if(PhotonNetwork.IsMasterClient)
         {
             SpawnPlayer();
         }
         
-        
-
-        /*
-        for (int i = 0; i < PhotonNetwork.CurrentRoom.Players.Count; i++)
-        {
-            //print(PhotonNetwork.CurrentRoom.Players[i].ActorNumber);
-            print(PhotonNetwork.CurrentRoom.Players[i].GetPlayerNumber());
-        }
-        */
-        
     }
 
-    
+    //Spawn other players on entering room
     public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        SpawnPlayer(newPlayer);
-    }
+        if (PhotonNetwork.IsMasterClient)
+        {
+            SpawnPlayer(newPlayer);
+        }
 
+    }
+    
+    //Spawn character and assign to new player
     void SpawnPlayer(Player newPlayer)
     {
-        //print("hi");
         Vector3 spawnPos = new Vector3(Random.Range(-5f, 5f), 1, Random.Range(-5f, 5f));
         Transform spawnTf = transform;
         spawnTf.position = spawnPos;
         GameObject newCharacter = PhotonNetwork.Instantiate(playerCharacter.name, spawnPos, transform.rotation);
+
         newCharacter.GetComponent<PhotonView>().TransferOwnership(newPlayer);
+        newCharacter.GetComponent<PlayerControls>().SetCharacterMat(PhotonNetwork.CurrentRoom.PlayerCount - 1);
+        newCharacter.GetComponent<PlayerControls>().playerCam = playerCam;
+
     }
 
+    //Spawn initial player
     void SpawnPlayer()
     {
         Vector3 spawnPos = new Vector3(Random.Range(-5f, 5f), 1, Random.Range(-5f, 5f));
         Transform spawnTf = transform;
         spawnTf.position = spawnPos;
-        //GameObject newCharacter = Instantiate(playerCharacter, spawnTf);
         if (PlayerControls.localPlayerInstance == null)
         {
             GameObject newCharacter = PhotonNetwork.Instantiate(playerCharacter.name, spawnPos, transform.rotation);
-            SpawnFeedback();
+            newCharacter.GetComponent<PlayerControls>().SetCharacterMat(PhotonNetwork.CurrentRoom.PlayerCount - 1);
+            newCharacter.GetComponent<PlayerControls>().playerCam = playerCam;
+
+            //For testing purposes
+            //SpawnFeedback();
         }
-        
-        //newCharacter.GetComponent<PhotonView>().TransferOwnership(0);
         
     }
 
+    //Changes colour of connection text when initial player is spawned
     void SpawnFeedback()
     {
         ui.GetComponent<TestConnectionText>().ChangeColour();
