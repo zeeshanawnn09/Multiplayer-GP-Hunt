@@ -1,6 +1,6 @@
 using UnityEngine;
 using Photon.Pun;
-//using UnityEngine.InputSystem;
+using UnityEngine.InputSystem;
 
 public class PlayerControls : MonoBehaviourPunCallbacks
 {
@@ -14,10 +14,20 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     public Camera playerCam;
 
-    public float moveSpeed = 5f;
-    public float turnSpeed = 1000f;
+    [SerializeField]
+    float moveSpeed = 5f;
+
+    [SerializeField]
+    float turnSpeed = 5f;
+
+    [SerializeField]
+    float cameraSpeed = 5f;
 
     public static GameObject localPlayerInstance;
+
+    InputSystem_Actions inputActions;
+    Vector2 moveInput;
+    Vector2 lookInput;
 
     private void Awake()
     {
@@ -29,8 +39,30 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         }
         */
 
+        inputActions = new InputSystem_Actions();
+        inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
+        inputActions.Player.Move.canceled += _ => moveInput = Vector2.zero;
+        inputActions.Player.Look.performed += ctx => lookInput = ctx.ReadValue<Vector2>();
+        inputActions.Player.Look.canceled += _ => lookInput = Vector2.zero;
+
         DontDestroyOnLoad(this.gameObject);
 
+    }
+
+    private void OnEnable()
+    {
+        if (inputActions != null)
+        {
+            inputActions.Enable();
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (inputActions != null)
+        {
+            inputActions.Disable();
+        }
     }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -59,20 +91,19 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     //Move
     void ProcessMovement()
     {
-        Vector3 moveInput = transform.forward * Input.GetAxis("Vertical") * moveSpeed * Time.deltaTime + 
-            transform.right * Input.GetAxis("Horizontal") * moveSpeed * Time.deltaTime;
-        controller.Move(moveInput);
+        Vector3 moveVector = transform.forward * moveInput.y + transform.right * moveInput.x;
+        controller.Move(moveVector * moveSpeed * Time.deltaTime);
         
     }
 
     //Turn
     void ProcessTurn()
     {
-        float xInput = Input.GetAxis("Mouse X") * turnSpeed * Time.deltaTime;
-        float yInput = Input.GetAxis("Mouse Y") * turnSpeed * Time.deltaTime;
+        float xInput = lookInput.x * turnSpeed * Time.deltaTime;
+        float yInput = lookInput.y * cameraSpeed * Time.deltaTime;
         
-        transform.Rotate(0,xInput,0);
-        camObject.transform.Rotate(-yInput,0,0);
+        transform.Rotate(0, xInput, 0);
+        camObject.transform.Rotate(-yInput, 0, 0);
 
         
     }
