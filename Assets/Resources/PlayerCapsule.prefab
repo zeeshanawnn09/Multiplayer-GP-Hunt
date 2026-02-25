@@ -168,7 +168,8 @@ MonoBehaviour:
   - {fileID: 2100000, guid: c25a1bf5ea879884b953308760762cb5, type: 2}
   playerCam: {fileID: 0}
   moveSpeed: 5
-  turnSpeed: 600
+  turnSpeed: 5
+  cameraSpeed: 5
 --- !u!114 &4420333507835083870
 MonoBehaviour:
   m_ObjectHideFlags: 0

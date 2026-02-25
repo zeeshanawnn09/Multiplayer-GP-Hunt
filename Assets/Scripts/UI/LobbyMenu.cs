@@ -60,20 +60,20 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     public void NewRoom()
     {
         string inputName = iFNewRoom.text;
-        if(inputName != "")
+        if (inputName != "")
         {
+            if (!PhotonNetwork.IsConnectedAndReady)
+            {
+                statusText.text = "Connection status: Not connected";
+                return;
+            }
+
             RoomOptions roomOptions = new RoomOptions();
             roomOptions.IsOpen = true;
             roomOptions.IsVisible = true;
             roomOptions.MaxPlayers = (byte)4;
 
             PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
-
-            if (PhotonNetwork.NetworkClientState != ClientState.Joined
-            && PhotonNetwork.NetworkClientState != ClientState.Joining)
-            {
-                RefreshLobby();
-            }
         }
         
     }
@@ -130,8 +130,20 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     {
         if (PhotonNetwork.IsMasterClient)
         {
-            PhotonNetwork.LoadLevel(1);
+            PhotonNetwork.LoadLevel("Level_1");
         }
+    }
+
+    public override void OnCreateRoomFailed(short returnCode, string message)
+    {
+        statusText.text = "Create room failed: " + message;
+        RefreshLobby();
+    }
+
+    public override void OnJoinRoomFailed(short returnCode, string message)
+    {
+        statusText.text = "Join room failed: " + message;
+        RefreshLobby();
     }
 
 }

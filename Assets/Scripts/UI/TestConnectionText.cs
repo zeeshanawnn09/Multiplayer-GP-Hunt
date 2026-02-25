@@ -18,7 +18,8 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     // Update is called once per frame
     void Update()
     {
-        text.text = "Connection status: " + PhotonNetwork.NetworkClientState + " Room: " + PhotonNetwork.CurrentRoom.Name;
+        string roomName = PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.Name : "None";
+        text.text = "Connection status: " + PhotonNetwork.NetworkClientState + " Room: " + roomName;
         
     }
 
