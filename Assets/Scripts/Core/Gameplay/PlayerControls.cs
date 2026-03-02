@@ -2,6 +2,12 @@ using UnityEngine;
 using Photon.Pun;
 using UnityEngine.InputSystem;
 
+public enum PlayerRole
+{
+    Priest,
+    Ghost
+}
+
 public class PlayerControls : MonoBehaviourPunCallbacks
 {
     CharacterController controller;
@@ -13,6 +19,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     Material[] materials;
 
     public Camera playerCam;
+
+    public PlayerRole playerRole { get; private set; }
 
     [SerializeField]
     float moveSpeed = 5f;
@@ -117,6 +125,23 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         if (photonView.IsMine)
         {
             photonView.RPC("SetCharacterMat", RpcTarget.OthersBuffered, matIndex);
+        }
+    }
+
+    //Assigns role to player (Priest or Ghost)
+    [PunRPC]
+    public void AssignPlayerRole(int role)
+    {
+        playerRole = (PlayerRole)role;
+        print($"Player {photonView.Owner.NickName} assigned role: {playerRole}");
+        
+        // Apply role-specific material (0 = Priest, 1 = Ghost)
+        GetComponent<MeshRenderer>().material = materials[role];
+        
+        // Display role on UI if this is the local player
+        if (photonView.IsMine)
+        {
+            TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayRole(playerRole.ToString());
         }
     }
 
