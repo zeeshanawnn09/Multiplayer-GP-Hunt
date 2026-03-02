@@ -7,6 +7,7 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     public TMP_Text text;
     public TMP_Text iMText;
     public TMP_Text ownerText;
+    public TMP_Text roleText;
 
     public static GameObject TestUI;
 
@@ -45,5 +46,11 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     public void DisplayOwner(string input)
     {
         ownerText.text = "Owner: " + input;
+    }
+
+    //Display player's assigned role
+    public void DisplayRole(string role)
+    {
+        roleText.text = "Role: " + role;
     }
 }
