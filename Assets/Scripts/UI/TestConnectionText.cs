@@ -11,9 +11,20 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
 
     public static GameObject TestUI;
 
-    private void Start()
+    private void Awake()
     {
         TestUI = this.gameObject;
+        Debug.Log("TestConnectionText.TestUI initialized in Awake");
+    }
+
+    private void Start()
+    {
+        // Ensure TestUI is set (redundant but safe)
+        if (TestUI == null)
+        {
+            TestUI = this.gameObject;
+            Debug.LogWarning("TestUI was null in Start, setting it now");
+        }
     }
 
     // Update is called once per frame
@@ -39,18 +50,27 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     //Display photonView.IsMine
     public void DisplayView(bool input)
     {
-        iMText.text = "IsMine: " + input;
+        if (iMText != null)
+        {
+            iMText.text = "IsMine: " + input;
+        }
     }
 
     //Display current owner of GameObject
     public void DisplayOwner(string input)
     {
-        ownerText.text = "Owner: " + input;
+        if (ownerText != null)
+        {
+            ownerText.text = "Owner: " + input;
+        }
     }
 
     //Display player's assigned role
     public void DisplayRole(string role)
     {
-        roleText.text = "Role: " + role;
+        if (roleText != null)
+        {
+            roleText.text = "Role: " + role;
+        }
     }
 }

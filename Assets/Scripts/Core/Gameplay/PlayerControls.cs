@@ -57,16 +57,18 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     }
 
-    private void OnEnable()
+    private new void OnEnable()
     {
+        base.OnEnable();
         if (inputActions != null)
         {
             inputActions.Enable();
         }
     }
 
-    private void OnDisable()
+    private new void OnDisable()
     {
+        base.OnDisable();
         if (inputActions != null)
         {
             inputActions.Disable();
@@ -77,7 +79,15 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     void Start()
     {
         controller = GetComponent<CharacterController>();
-        TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayView(photonView.IsMine);
+        
+        Debug.Log($"Player spawned! IsMine: {photonView.IsMine}, Owner: {photonView.Owner}, ViewID: {photonView.ViewID}");
+        
+        // Safe null check for TestUI
+        if (TestConnectionText.TestUI != null)
+        {
+            TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayView(photonView.IsMine);
+        }
+        
         Invoke("FinishInvoke", 0.2f);
         
     }
@@ -88,11 +98,22 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         //Process local player input
         if (photonView.IsMine)
         {
+            // Debug input values occasionally
+            if (Time.frameCount % 120 == 0 && (moveInput != Vector2.zero || lookInput != Vector2.zero))
+            {
+                Debug.Log($"Input detected - Move: {moveInput}, Look: {lookInput}");
+            }
+            
             ProcessMovement();
             ProcessTurn();
             
         }
-        TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayOwner(photonView.Owner.ToStringFull());
+        
+        // Safe null check for TestUI
+        if (TestConnectionText.TestUI != null && photonView.Owner != null)
+        {
+            TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayOwner(photonView.Owner.ToStringFull());
+        }
         
     }
 
@@ -120,8 +141,17 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     [PunRPC]
     public void SetCharacterMat(int matIndex)
     {
-        GetComponent<MeshRenderer>().material = materials[matIndex];
-        print("MatCall: " + PhotonNetwork.CurrentRoom.PlayerCount);
+        // Bounds check for material index
+        if (matIndex >= 0 && matIndex < materials.Length)
+        {
+            GetComponent<MeshRenderer>().material = materials[matIndex];
+            print("MatCall: " + PhotonNetwork.CurrentRoom.PlayerCount);
+        }
+        else
+        {
+            Debug.LogWarning($"Material index {matIndex} out of bounds (0-{materials.Length - 1})");
+        }
+        
         if (photonView.IsMine)
         {
             photonView.RPC("SetCharacterMat", RpcTarget.OthersBuffered, matIndex);
@@ -133,26 +163,70 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     public void AssignPlayerRole(int role)
     {
         playerRole = (PlayerRole)role;
-        print($"Player {photonView.Owner.NickName} assigned role: {playerRole}");
+        string localPlayerName = PhotonNetwork.LocalPlayer?.NickName ?? "Unknown";
+        Debug.Log($"[RPC] AssignPlayerRole received on client '{localPlayerName}' for player '{photonView.Owner.NickName}': {playerRole} (IsMine: {photonView.IsMine}, ViewID: {photonView.ViewID})");
         
         // Apply role-specific material (0 = Priest, 1 = Ghost)
-        GetComponent<MeshRenderer>().material = materials[role];
+        if (role < materials.Length)
+        {
+            GetComponent<MeshRenderer>().material = materials[role];
+            Debug.Log($"  → Applied material {role} for role {playerRole}");
+        }
+        else
+        {
+            Debug.LogWarning($"  → Role {role} exceeds materials array length {materials.Length}");
+        }
         
         // Display role on UI if this is the local player
         if (photonView.IsMine)
         {
-            TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayRole(playerRole.ToString());
+            if (TestConnectionText.TestUI != null)
+            {
+                TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayRole(playerRole.ToString());
+                Debug.Log($"  → ✓ SUCCESS: Updated UI for LOCAL player with role: {playerRole}");
+            }
+            else
+            {
+                Debug.LogWarning("  → TestUI is null, cannot display role on UI");
+            }
+        }
+        else
+        {
+            Debug.Log($"  → Skipping UI update (not local player, this is {photonView.Owner.NickName}'s remote character)");
         }
     }
 
     //Store reference to local player and attach main camera to it
     void FinishInvoke()
     {
-        TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayView(photonView.IsMine);
+        Debug.Log($"FinishInvoke called. IsMine: {photonView.IsMine}, Owner: {photonView.Owner?.NickName}");
+        
+        // Safe null check for TestUI
+        if (TestConnectionText.TestUI != null)
+        {
+            TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayView(photonView.IsMine);
+        }
+        
         if (photonView.IsMine)
         {
             localPlayerInstance = this.gameObject;
-            AttachCamera(GameObject.FindWithTag("MainCamera"));
+            Debug.Log($"Set localPlayerInstance for player {photonView.Owner.NickName}");
+            
+            // Safely find and attach camera
+            GameObject mainCam = GameObject.FindWithTag("MainCamera");
+            if (mainCam != null)
+            {
+                AttachCamera(mainCam);
+                Debug.Log("Camera attached successfully");
+            }
+            else
+            {
+                Debug.LogWarning("MainCamera not found for player!");
+            }
+        }
+        else
+        {
+            Debug.Log($"Skipping camera attachment - not my player (Owner: {photonView.Owner?.NickName})");
         }
     }
 
