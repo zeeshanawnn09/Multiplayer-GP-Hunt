@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using UnityEngine.UIElements;
 using TMPro;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 
 public class LobbyMenu : MonoBehaviourPunCallbacks
@@ -16,10 +17,13 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     public GameObject roomPanelClass;
     public Transform scrollViewTransform;
     public GameObject playerCharacter;
+    public UnityEngine.UI.Button connectButton;
+    public TMPro.TMP_Text playerCountText;
 
     private string gameVer = "0.0";
     private List<RoomInfo>roomsInfo = new List<RoomInfo>();
     private List<GameObject>roomPanels = new List<GameObject>();
+    private const int REQUIRED_PLAYERS = 4;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -31,6 +35,13 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
             PhotonNetwork.PhotonServerSettings.AppSettings.AppVersion = gameVer;
 
             PhotonNetwork.ConnectUsingSettings();
+        }
+
+        // Initialize connect button state
+        if (connectButton != null)
+        {
+            connectButton.gameObject.SetActive(false);
+            connectButton.interactable = false;
         }
     }
 
@@ -125,10 +136,64 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         regionText.color = Color.white;
     }
 
-    //On joining a room, load the level if master client (AutomaticallySyncScene = true)
+    //On joining a room, show connect button and update its state
     public override void OnJoinedRoom()
     {
-        if (PhotonNetwork.IsMasterClient)
+        if (connectButton != null)
+        {
+            connectButton.gameObject.SetActive(true);
+        }
+        UpdateConnectButton();
+    }
+
+    //Update button state when a player joins
+    public override void OnPlayerEnteredRoom(Player newPlayer)
+    {
+        UpdateConnectButton();
+    }
+
+    //Update button state when a player leaves
+    public override void OnPlayerLeftRoom(Player otherPlayer)
+    {
+        UpdateConnectButton();
+    }
+
+    //Update the connect button based on player count and master client status
+    private void UpdateConnectButton()
+    {
+        if (connectButton == null || !PhotonNetwork.InRoom)
+            return;
+
+        int currentPlayers = PhotonNetwork.CurrentRoom.PlayerCount;
+        bool allPlayersJoined = currentPlayers >= REQUIRED_PLAYERS;
+        bool isMaster = PhotonNetwork.IsMasterClient;
+
+        // Update player count text if available
+        if (playerCountText != null)
+        {
+            playerCountText.text = "Players: " + currentPlayers + "/" + REQUIRED_PLAYERS;
+        }
+
+        // Enable button only if all players joined AND local player is master
+        connectButton.interactable = allPlayersJoined && isMaster;
+
+        // Optional: Change button color to indicate state
+        var colors = connectButton.colors;
+        if (allPlayersJoined && isMaster)
+        {
+            colors.normalColor = Color.green;
+        }
+        else
+        {
+            colors.normalColor = Color.gray;
+        }
+        connectButton.colors = colors;
+    }
+
+    //Called when Connect button is pressed - loads the game scene
+    public void OnConnectButtonPressed()
+    {
+        if (PhotonNetwork.IsMasterClient && PhotonNetwork.CurrentRoom.PlayerCount >= REQUIRED_PLAYERS)
         {
             PhotonNetwork.LoadLevel("Level_1");
         }
