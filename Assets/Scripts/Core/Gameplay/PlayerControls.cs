@@ -36,6 +36,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     InputSystem_Actions inputActions;
     Vector2 moveInput;
     Vector2 lookInput;
+    bool interactPressed;
 
     private void Awake()
     {
@@ -52,6 +53,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         inputActions.Player.Move.canceled += _ => moveInput = Vector2.zero;
         inputActions.Player.Look.performed += ctx => lookInput = ctx.ReadValue<Vector2>();
         inputActions.Player.Look.canceled += _ => lookInput = Vector2.zero;
+        inputActions.Player.Interact.performed += _ => interactPressed = true;
 
         DontDestroyOnLoad(this.gameObject);
 
@@ -235,6 +237,17 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     {
         cam.transform.SetParent(camObject.transform);
         cam.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+    }
+
+    public bool ConsumeInteractPressed()
+    {
+        if (!photonView.IsMine || !interactPressed)
+        {
+            return false;
+        }
+
+        interactPressed = false;
+        return true;
     }
 
 }
