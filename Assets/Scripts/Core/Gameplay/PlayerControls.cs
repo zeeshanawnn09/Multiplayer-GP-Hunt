@@ -100,6 +100,12 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         //Process local player input
         if (photonView.IsMine)
         {
+            // Fallback to direct keyboard input if the Interact action is not bound correctly.
+            if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
+            {
+                interactPressed = true;
+            }
+
             // Debug input values occasionally
             if (Time.frameCount % 120 == 0 && (moveInput != Vector2.zero || lookInput != Vector2.zero))
             {
