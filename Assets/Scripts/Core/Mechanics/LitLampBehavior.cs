@@ -1,5 +1,7 @@
 using UnityEngine;
+using Photon.Pun;
 
+[RequireComponent(typeof(PhotonView))]
 public class LitLampBehavior : MonoBehaviour
 {
     public GameObject Light;
@@ -7,9 +9,18 @@ public class LitLampBehavior : MonoBehaviour
 
     private bool _isLit = false;
     private PlayerControls _localPlayerInRange;
+    private PhotonView _photonView;
 
     private void Awake()
     {
+        _photonView = GetComponent<PhotonView>();
+        EnsureLampLightReference();
+
+        if (Light != null)
+        {
+            Light.SetActive(_isLit);
+        }
+
         SetPromptVisible(false);
     }
 
@@ -24,7 +35,7 @@ public class LitLampBehavior : MonoBehaviour
         if (playerControls != null && playerControls.gameObject == PlayerControls.localPlayerInstance)
         {
             _localPlayerInRange = playerControls;
-            SetPromptVisible(true);
+            SetPromptVisible(!_isLit);
         }
     }
 
@@ -45,15 +56,63 @@ public class LitLampBehavior : MonoBehaviour
 
     private void Update()
     {
-        if (_localPlayerInRange == null)
+        if (_localPlayerInRange == null || _isLit)
         {
             return;
         }
 
         if (_localPlayerInRange.ConsumeInteractPressed())
         {
-            _isLit = !_isLit;
+            if (PhotonNetwork.InRoom && _photonView != null && _photonView.ViewID != 0)
+            {
+                _photonView.RPC(nameof(RPC_RequestLightLamp), RpcTarget.MasterClient);
+            }
+            else
+            {
+                Debug.LogWarning($"{name}: Lamp networking is not ready (InRoom={PhotonNetwork.InRoom}, ViewID={(_photonView != null ? _photonView.ViewID : 0)}). Applying local fallback.");
+                RPC_SetLampLitState(true);
+
+                if (LampProgressManager.Instance != null)
+                {
+                    LampProgressManager.Instance.NotifyLampLitLocalFallback();
+                }
+            }
+        }
+    }
+
+    [PunRPC]
+    private void RPC_RequestLightLamp(PhotonMessageInfo info)
+    {
+        if (!PhotonNetwork.IsMasterClient || _isLit)
+        {
+            return;
+        }
+
+        _photonView.RPC(nameof(RPC_SetLampLitState), RpcTarget.AllBuffered, true);
+
+        if (LampProgressManager.Instance != null)
+        {
+            LampProgressManager.Instance.NotifyLampLitByMaster();
+        }
+        else
+        {
+            Debug.LogWarning("LampProgressManager is missing in scene. Progress bar will not update.");
+        }
+    }
+
+    [PunRPC]
+    private void RPC_SetLampLitState(bool isLit)
+    {
+        _isLit = isLit;
+
+        if (Light != null)
+        {
             Light.SetActive(_isLit);
+        }
+
+        if (_isLit)
+        {
+            SetPromptVisible(false);
         }
     }
 
@@ -68,6 +127,24 @@ public class LitLampBehavior : MonoBehaviour
         if (interactPrompt != null)
         {
             interactPrompt.SetActive(isVisible);
+        }
+    }
+
+    private void EnsureLampLightReference()
+    {
+        if (Light != null)
+        {
+            return;
+        }
+
+        UnityEngine.Light childPointLight = GetComponentInChildren<UnityEngine.Light>(true);
+        if (childPointLight != null)
+        {
+            Light = childPointLight.gameObject;
+        }
+        else
+        {
+            Debug.LogWarning($"{name}: No Point Light found for LitLampBehavior. Assign a light object or add a child Light component.");
         }
     }
 
