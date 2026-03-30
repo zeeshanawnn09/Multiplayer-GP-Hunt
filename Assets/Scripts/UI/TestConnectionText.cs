@@ -8,6 +8,7 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     public TMP_Text iMText;
     public TMP_Text ownerText;
     public TMP_Text roleText;
+    public TMP_Text healthText;
 
     public static GameObject TestUI;
 
@@ -71,6 +72,14 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
         if (roleText != null)
         {
             roleText.text = "Role: " + role;
+        }
+    }
+
+    public void DisplayHealth(int currentHealth, int maxHealth)
+    {
+        if (healthText != null)
+        {
+            healthText.text = "Health: " + currentHealth + "/" + maxHealth;
         }
     }
 }
