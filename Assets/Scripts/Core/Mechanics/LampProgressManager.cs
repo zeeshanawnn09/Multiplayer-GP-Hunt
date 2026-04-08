@@ -7,6 +7,9 @@ using UnityEngine.UI;
 public class LampProgressManager : MonoBehaviourPunCallbacks
 {
     public static LampProgressManager Instance { get; private set; }
+    public int CurrentLitLamps => _currentLitLamps;
+    public int LampsNeededToOpenDoor => lampsNeededToOpenDoor;
+    public bool IsRitualReady => _currentLitLamps >= lampsNeededToOpenDoor;
 
     [SerializeField] private int totalLamps = 15;
     [SerializeField] private int lampsNeededToOpenDoor = 10;
