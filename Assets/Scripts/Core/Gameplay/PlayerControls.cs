@@ -18,9 +18,13 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     [SerializeField]
     Material[] materials;
 
+    [SerializeField]
+    Mesh[] meshes;
+
     public Camera playerCam;
 
     public PlayerRole playerRole { get; private set; }
+    public bool HasAssignedRole { get; private set; }
 
     [SerializeField]
     float moveSpeed = 5f;
@@ -164,14 +168,30 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     public void AssignPlayerRole(int role)
     {
         playerRole = (PlayerRole)role;
+        HasAssignedRole = true;
         string localPlayerName = PhotonNetwork.LocalPlayer?.NickName ?? "Unknown";
         Debug.Log($"[RPC] AssignPlayerRole received on client '{localPlayerName}' for player '{photonView.Owner.NickName}': {playerRole} (IsMine: {photonView.IsMine}, ViewID: {photonView.ViewID})");
         
-        // Apply role-specific material (0 = Priest, 1 = Ghost)
+        // Apply role-specific material and mesh (0 = Priest, 1 = Ghost)
         if (role < materials.Length)
         {
             GetComponent<MeshRenderer>().material = materials[role];
             Debug.Log($"  → Applied material {role} for role {playerRole}");
+            
+            // Switch mesh if available
+            if (role < meshes.Length && meshes[role] != null)
+            {
+                GetComponent<MeshFilter>().mesh = meshes[role];
+                Debug.Log($"  → Applied mesh {role} for role {playerRole}");
+            }
+            else if (role >= meshes.Length)
+            {
+                Debug.LogWarning($"  → Role {role} exceeds meshes array length {meshes.Length}");
+            }
+            else
+            {
+                Debug.LogWarning($"  → Mesh at index {role} is null");
+            }
         }
         else
         {

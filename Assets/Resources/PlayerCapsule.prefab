@@ -178,8 +178,9 @@ MonoBehaviour:
   materials:
   - {fileID: 2100000, guid: 13c3ba6c1430b8c4399909b0bec9bfa5, type: 2}
   - {fileID: 2100000, guid: 9c435f468c116524bb8b910de6ab0a26, type: 2}
-  - {fileID: 2100000, guid: fbfe5bc5174e2c64b9376f1f9583a8e3, type: 2}
-  - {fileID: 2100000, guid: c25a1bf5ea879884b953308760762cb5, type: 2}
+  meshes:
+  - {fileID: 8028644478956099555, guid: dc860c36b433a9348adbde0953e5f5b5, type: 3}
+  - {fileID: 3013210557593986596, guid: 671755a625e64fd498190f7c494810f9, type: 3}
   playerCam: {fileID: 0}
   moveSpeed: 5
   turnSpeed: 5
