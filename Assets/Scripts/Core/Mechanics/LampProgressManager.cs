@@ -11,12 +11,15 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
     [SerializeField] private int totalLamps = 15;
     [SerializeField] private int lampsNeededToOpenDoor = 10;
     [SerializeField] private Slider progressBar;
+    [SerializeField] private GameObject ritualReadyPrompt;
+    [SerializeField] private float ritualReadyPromptDurationSeconds = 10f;
 
     private const string LitLampCountKey = "LitLampCount";
 
     private int _currentLitLamps;
     private bool _ritualDoorLogged;
     private int _lastLoggedLitLamps = -1;
+    private Coroutine _ritualPromptCoroutine;
 
     private void Awake()
     {
@@ -33,6 +36,7 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
     {
         ValidateLampSetup();
         ConfigureProgressBar();
+        SetRitualPromptVisible(false);
 
         if (!PhotonNetwork.InRoom)
         {
@@ -70,7 +74,7 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
         ApplyLitLampCount(GetRoomLitLampCount());
     }
 
-    public void NotifyLampLitByMaster()
+    public void NotifyLampStateChangedByMaster(bool isLit)
     {
         if (!PhotonNetwork.InRoom || !PhotonNetwork.IsMasterClient)
         {
@@ -78,7 +82,8 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
         }
 
         int roomCount = GetRoomLitLampCount();
-        int updatedCount = Mathf.Clamp(roomCount + 1, 0, totalLamps);
+        int delta = isLit ? 1 : -1;
+        int updatedCount = Mathf.Clamp(roomCount + delta, 0, totalLamps);
 
         if (updatedCount == roomCount)
         {
@@ -88,7 +93,7 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
         SetRoomLitLampCount(updatedCount);
     }
 
-    public void NotifyLampLitLocalFallback()
+    public void NotifyLampStateChangedLocalFallback(bool isLit)
     {
         if (PhotonNetwork.InRoom)
         {
@@ -96,7 +101,8 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
             return;
         }
 
-        ApplyLitLampCount(Mathf.Clamp(_currentLitLamps + 1, 0, totalLamps));
+        int delta = isLit ? 1 : -1;
+        ApplyLitLampCount(Mathf.Clamp(_currentLitLamps + delta, 0, totalLamps));
     }
 
     private void ConfigureProgressBar()
@@ -143,6 +149,7 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
 
     private void ApplyLitLampCount(int litLampCount)
     {
+        int previousLitLampCount = _currentLitLamps;
         _currentLitLamps = Mathf.Clamp(litLampCount, 0, totalLamps);
 
         if (_currentLitLamps != _lastLoggedLitLamps)
@@ -161,5 +168,61 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
             _ritualDoorLogged = true;
             Debug.Log($"Ritual door has opened ({_currentLitLamps}/{totalLamps} lamps lit)");
         }
+
+        bool crossedThreshold = previousLitLampCount < lampsNeededToOpenDoor && _currentLitLamps >= lampsNeededToOpenDoor;
+        if (crossedThreshold)
+        {
+            ShowRitualReadyPromptTemporarily();
+        }
+    }
+
+    private void ShowRitualReadyPromptTemporarily()
+    {
+        if (ritualReadyPrompt == null)
+        {
+            return;
+        }
+
+        if (_ritualPromptCoroutine != null)
+        {
+            StopCoroutine(_ritualPromptCoroutine);
+        }
+
+        _ritualPromptCoroutine = StartCoroutine(HideRitualPromptAfterDelay());
+    }
+
+    private System.Collections.IEnumerator HideRitualPromptAfterDelay()
+    {
+        SetRitualPromptVisible(true);
+
+        float clampedDuration = Mathf.Max(0f, ritualReadyPromptDurationSeconds);
+        if (clampedDuration > 0f)
+        {
+            yield return new WaitForSeconds(clampedDuration);
+        }
+
+        SetRitualPromptVisible(false);
+        _ritualPromptCoroutine = null;
+    }
+
+    private void SetRitualPromptVisible(bool isVisible)
+    {
+        if (ritualReadyPrompt != null)
+        {
+            ritualReadyPrompt.SetActive(isVisible);
+        }
+    }
+
+    public override void OnDisable()
+    {
+        base.OnDisable();
+
+        if (_ritualPromptCoroutine != null)
+        {
+            StopCoroutine(_ritualPromptCoroutine);
+            _ritualPromptCoroutine = null;
+        }
+
+        SetRitualPromptVisible(false);
     }
 }

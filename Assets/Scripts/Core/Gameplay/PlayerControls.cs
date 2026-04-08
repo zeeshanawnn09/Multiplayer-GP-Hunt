@@ -40,13 +40,6 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     private void Awake()
     {
-        //Moved to FinishInvoke due to ownership transfer after spawning
-        /*
-        if (photonView.IsMine)
-        {
-            localPlayerInstance = this.gameObject;
-        }
-        */
 
         inputActions = new InputSystem_Actions();
         inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();

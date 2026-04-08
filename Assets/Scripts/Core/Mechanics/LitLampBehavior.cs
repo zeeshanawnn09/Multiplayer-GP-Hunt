@@ -35,7 +35,7 @@ public class LitLampBehavior : MonoBehaviour
         if (playerControls != null && playerControls.gameObject == PlayerControls.localPlayerInstance)
         {
             _localPlayerInRange = playerControls;
-            SetPromptVisible(!_isLit);
+            SetPromptVisible(true);
         }
     }
 
@@ -56,43 +56,45 @@ public class LitLampBehavior : MonoBehaviour
 
     private void Update()
     {
-        if (_localPlayerInRange == null || _isLit)
+        if (_localPlayerInRange == null)
         {
             return;
         }
 
         if (_localPlayerInRange.ConsumeInteractPressed())
         {
+            bool targetLitState = !_isLit;
+
             if (PhotonNetwork.InRoom && _photonView != null && _photonView.ViewID != 0)
             {
-                _photonView.RPC(nameof(RPC_RequestLightLamp), RpcTarget.MasterClient);
+                _photonView.RPC(nameof(RPC_RequestLightLamp), RpcTarget.MasterClient, targetLitState);
             }
             else
             {
                 Debug.LogWarning($"{name}: Lamp networking is not ready (InRoom={PhotonNetwork.InRoom}, ViewID={(_photonView != null ? _photonView.ViewID : 0)}). Applying local fallback.");
-                RPC_SetLampLitState(true);
+                RPC_SetLampLitState(targetLitState);
 
                 if (LampProgressManager.Instance != null)
                 {
-                    LampProgressManager.Instance.NotifyLampLitLocalFallback();
+                    LampProgressManager.Instance.NotifyLampStateChangedLocalFallback(targetLitState);
                 }
             }
         }
     }
 
     [PunRPC]
-    private void RPC_RequestLightLamp(PhotonMessageInfo info)
+    private void RPC_RequestLightLamp(bool targetLitState, PhotonMessageInfo info)
     {
-        if (!PhotonNetwork.IsMasterClient || _isLit)
+        if (!PhotonNetwork.IsMasterClient || _isLit == targetLitState)
         {
             return;
         }
 
-        _photonView.RPC(nameof(RPC_SetLampLitState), RpcTarget.AllBuffered, true);
+        _photonView.RPC(nameof(RPC_SetLampLitState), RpcTarget.AllBuffered, targetLitState);
 
         if (LampProgressManager.Instance != null)
         {
-            LampProgressManager.Instance.NotifyLampLitByMaster();
+            LampProgressManager.Instance.NotifyLampStateChangedByMaster(targetLitState);
         }
         else
         {
@@ -110,10 +112,7 @@ public class LitLampBehavior : MonoBehaviour
             Light.SetActive(_isLit);
         }
 
-        if (_isLit)
-        {
-            SetPromptVisible(false);
-        }
+        SetPromptVisible(_localPlayerInRange != null);
     }
 
     private void OnDisable()
