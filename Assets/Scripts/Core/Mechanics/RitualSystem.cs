@@ -9,6 +9,9 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 {
     [Header("Bell Setup")]
     [SerializeField] private GameObject bellObject;
+
+    [Header("Secondary Ritual Setup")]
+    [SerializeField] private GameObject secondaryTaskObject;
     [SerializeField] private GameObject interactPrompt;
 
     [Header("Interaction")]
@@ -19,27 +22,43 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [SerializeField] private float minCooldownSeconds = 10f;
     [SerializeField] private float maxCooldownSeconds = 60f;
 
+    [Header("Secondary Cycle")]
+    [SerializeField] private int secondaryInteractionsRequired = 3;
+    [SerializeField] private float secondaryMinCooldownSeconds = 5f;
+    [SerializeField] private float secondaryMaxCooldownSeconds = 15f;
+
     [Header("Task UI")]
     [SerializeField] private TMP_Text taskText;
     [SerializeField] private int initialTaskValue = 0;
 
     private const string BellVisibleKey = "BellVisible";
     private const string BellRingCountKey = "BellRingCount";
-    private const string BellTaskValueKey = "BellTaskValue";
+    private const string SecondaryVisibleKey = "SecondaryVisible";
+    private const string SecondaryInteractionCountKey = "SecondaryInteractionCount";
+    private const string RitualTaskValueKey = "RitualTaskValue";
 
     private PlayerControls _localPlayerInRange;
     private float _holdProgress;
+
     private bool _isBellVisible;
-    private bool _isCoolingDown;
-    private Coroutine _cooldownCoroutine;
+    private bool _isSecondaryVisible;
+
+    private bool _isBellCoolingDown;
+    private bool _isSecondaryCoolingDown;
+
+    private Coroutine _bellCooldownCoroutine;
+    private Coroutine _secondaryCooldownCoroutine;
 
     private int _completedRings;
+    private int _secondaryInteractionsCompleted;
     private int _taskValue;
 
     private void Awake()
     {
         SetBellVisibleLocal(false);
+        SetSecondaryVisibleLocal(false);
         SetPromptVisible(false);
+
         _taskValue = initialTaskValue;
         UpdateTaskUI();
     }
@@ -51,7 +70,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (PhotonNetwork.InRoom && PhotonNetwork.IsMasterClient)
         {
             InitializeRoomPropertiesIfNeeded();
-            TryShowBellFromMaster();
+            EvaluateObjectiveVisibilityFromMaster();
         }
     }
 
@@ -59,25 +78,32 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     {
         if (PhotonNetwork.IsMasterClient && PhotonNetwork.InRoom)
         {
-            EvaluateBellVisibilityFromMaster();
+            EvaluateObjectiveVisibilityFromMaster();
         }
 
-        if (!_isBellVisible)
+        if (!IsAnyObjectiveVisible() || !IsLocalPriestEligible())
         {
-            SetPromptVisible(false);
             _holdProgress = 0f;
-            return;
-        }
-
-        if (!IsLocalPriestEligible())
-        {
             SetPromptVisible(false);
-            _holdProgress = 0f;
             return;
         }
 
         SetPromptVisible(true);
 
+        if (_isBellVisible)
+        {
+            HandleBellInput();
+            return;
+        }
+
+        if (_isSecondaryVisible)
+        {
+            HandleSecondaryInput();
+        }
+    }
+
+    private void HandleBellInput()
+    {
         bool isInteractHeld = Keyboard.current != null && Keyboard.current.eKey.isPressed;
         if (!isInteractHeld)
         {
@@ -103,27 +129,40 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         }
     }
 
-    private void OnTriggerEnter(Collider other)
+    private void HandleSecondaryInput()
     {
-        if (!other.CompareTag("Player"))
+        if (!_localPlayerInRange.ConsumeInteractPressed())
         {
             return;
         }
 
+        if (PhotonNetwork.InRoom)
+        {
+            photonView.RPC(nameof(RPC_RequestSecondaryInteraction), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
+        }
+        else
+        {
+            HandleSecondaryInteractionAccepted();
+        }
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
         PlayerControls playerControls = other.GetComponentInParent<PlayerControls>();
-        if (playerControls != null && playerControls.gameObject == PlayerControls.localPlayerInstance)
+        if (playerControls == null || playerControls.gameObject != PlayerControls.localPlayerInstance)
+        {
+            return;
+        }
+
+        if (playerControls.IsPriest)
         {
             _localPlayerInRange = playerControls;
+            SetPromptVisible(IsAnyObjectiveVisible());
         }
     }
 
     private void OnTriggerExit(Collider other)
     {
-        if (!other.CompareTag("Player"))
-        {
-            return;
-        }
-
         PlayerControls playerControls = other.GetComponentInParent<PlayerControls>();
         if (playerControls != null && playerControls == _localPlayerInRange)
         {
@@ -135,12 +174,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private bool IsLocalPriestEligible()
     {
-        if (_localPlayerInRange == null)
-        {
-            return false;
-        }
-
-        return _localPlayerInRange.HasAssignedRole && _localPlayerInRange.playerRole == PlayerRole.Priest;
+        return _localPlayerInRange != null && _localPlayerInRange.IsPriest;
     }
 
     private bool IsLampRequirementMet()
@@ -148,38 +182,57 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         return LampProgressManager.Instance != null && LampProgressManager.Instance.IsRitualReady;
     }
 
-    private void TryShowBellFromMaster()
+    private bool IsAnyObjectiveVisible()
     {
-        if (!PhotonNetwork.IsMasterClient)
-        {
-            return;
-        }
-
-        if (_completedRings >= totalRingsRequired || _isCoolingDown || !IsLampRequirementMet())
-        {
-            SetRoomBellVisible(false);
-            return;
-        }
-
-        SetRoomBellVisible(true);
+        return _isBellVisible || _isSecondaryVisible;
     }
 
-    private void EvaluateBellVisibilityFromMaster()
+    private bool IsBellObjectiveActive()
     {
-        if (_completedRings >= totalRingsRequired || _isCoolingDown)
+        return _completedRings < totalRingsRequired;
+    }
+
+    private bool IsSecondaryObjectiveUnlocked()
+    {
+        return _completedRings >= totalRingsRequired;
+    }
+
+    private bool IsSecondaryObjectiveComplete()
+    {
+        return _secondaryInteractionsCompleted >= secondaryInteractionsRequired;
+    }
+
+    private void EvaluateObjectiveVisibilityFromMaster()
+    {
+        if (IsBellObjectiveActive())
         {
-            if (_isBellVisible)
+            if (_isSecondaryVisible)
             {
-                SetRoomBellVisible(false);
+                SetSecondaryVisible(false);
+            }
+
+            bool shouldShowBell = !_isBellCoolingDown && IsLampRequirementMet();
+            if (shouldShowBell != _isBellVisible)
+            {
+                SetBellVisible(shouldShowBell);
             }
 
             return;
         }
 
-        bool shouldBeVisible = IsLampRequirementMet();
-        if (shouldBeVisible != _isBellVisible)
+        if (_isBellVisible)
         {
-            SetRoomBellVisible(shouldBeVisible);
+            SetBellVisible(false);
+        }
+
+        bool shouldShowSecondary = IsSecondaryObjectiveUnlocked()
+            && !IsSecondaryObjectiveComplete()
+            && !_isSecondaryCoolingDown
+            && IsLampRequirementMet();
+
+        if (shouldShowSecondary != _isSecondaryVisible)
+        {
+            SetSecondaryVisible(shouldShowSecondary);
         }
     }
 
@@ -191,7 +244,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
-        if (!_isBellVisible || _isCoolingDown || _completedRings >= totalRingsRequired || !IsLampRequirementMet())
+        if (!_isBellVisible || _isBellCoolingDown || !IsBellObjectiveActive() || !IsLampRequirementMet())
         {
             return;
         }
@@ -204,49 +257,100 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         HandleBellRingAccepted();
     }
 
+    [PunRPC]
+    private void RPC_RequestSecondaryInteraction(int actorNumber, PhotonMessageInfo info)
+    {
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        if (!_isSecondaryVisible || _isSecondaryCoolingDown || !IsSecondaryObjectiveUnlocked() || IsSecondaryObjectiveComplete() || !IsLampRequirementMet())
+        {
+            return;
+        }
+
+        if (info.Sender == null || info.Sender.ActorNumber != actorNumber)
+        {
+            return;
+        }
+
+        HandleSecondaryInteractionAccepted();
+    }
+
     private void HandleBellRingAccepted()
     {
         _completedRings = Mathf.Clamp(_completedRings + 1, 0, totalRingsRequired);
         SetRoomRingCount(_completedRings);
-        SetRoomBellVisible(false);
+        SetBellVisible(false);
 
-        if (_completedRings >= totalRingsRequired)
+        if (!IsBellObjectiveActive())
         {
             SetRoomTaskValue(initialTaskValue + 1);
-            StopCooldown();
+            SetRoomSecondaryCount(0);
+            SetRoomSecondaryVisible(false);
+            StopBellCooldown();
+            EvaluateObjectiveVisibilityFromMaster();
             return;
         }
 
-        if (PhotonNetwork.InRoom)
+        StartBellCooldown();
+    }
+
+    private void HandleSecondaryInteractionAccepted()
+    {
+        _secondaryInteractionsCompleted = Mathf.Clamp(_secondaryInteractionsCompleted + 1, 0, secondaryInteractionsRequired);
+        SetRoomSecondaryCount(_secondaryInteractionsCompleted);
+        SetSecondaryVisible(false);
+
+        if (IsSecondaryObjectiveComplete())
         {
-            if (!PhotonNetwork.IsMasterClient)
-            {
-                return;
-            }
+            SetRoomTaskValue(_taskValue + 1);
+            StopSecondaryCooldown();
+            EvaluateObjectiveVisibilityFromMaster();
+            return;
         }
 
-        StartCooldown();
+        StartSecondaryCooldown();
     }
 
-    private void StartCooldown()
+    private void StartBellCooldown()
     {
-        StopCooldown();
-        _isCoolingDown = true;
-        _cooldownCoroutine = StartCoroutine(CooldownCoroutine());
+        StopBellCooldown();
+        _isBellCoolingDown = true;
+        _bellCooldownCoroutine = StartCoroutine(BellCooldownCoroutine());
     }
 
-    private void StopCooldown()
+    private void StopBellCooldown()
     {
-        _isCoolingDown = false;
+        _isBellCoolingDown = false;
 
-        if (_cooldownCoroutine != null)
+        if (_bellCooldownCoroutine != null)
         {
-            StopCoroutine(_cooldownCoroutine);
-            _cooldownCoroutine = null;
+            StopCoroutine(_bellCooldownCoroutine);
+            _bellCooldownCoroutine = null;
         }
     }
 
-    private System.Collections.IEnumerator CooldownCoroutine()
+    private void StartSecondaryCooldown()
+    {
+        StopSecondaryCooldown();
+        _isSecondaryCoolingDown = true;
+        _secondaryCooldownCoroutine = StartCoroutine(SecondaryCooldownCoroutine());
+    }
+
+    private void StopSecondaryCooldown()
+    {
+        _isSecondaryCoolingDown = false;
+
+        if (_secondaryCooldownCoroutine != null)
+        {
+            StopCoroutine(_secondaryCooldownCoroutine);
+            _secondaryCooldownCoroutine = null;
+        }
+    }
+
+    private System.Collections.IEnumerator BellCooldownCoroutine()
     {
         float minSeconds = Mathf.Max(0f, minCooldownSeconds);
         float maxSeconds = Mathf.Max(minSeconds, maxCooldownSeconds);
@@ -254,9 +358,22 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         yield return new WaitForSeconds(randomCooldown);
 
-        _isCoolingDown = false;
-        _cooldownCoroutine = null;
-        TryShowBellFromMaster();
+        _isBellCoolingDown = false;
+        _bellCooldownCoroutine = null;
+        EvaluateObjectiveVisibilityFromMaster();
+    }
+
+    private System.Collections.IEnumerator SecondaryCooldownCoroutine()
+    {
+        float minSeconds = Mathf.Max(0f, secondaryMinCooldownSeconds);
+        float maxSeconds = Mathf.Max(minSeconds, secondaryMaxCooldownSeconds);
+        float randomCooldown = Random.Range(minSeconds, maxSeconds);
+
+        yield return new WaitForSeconds(randomCooldown);
+
+        _isSecondaryCoolingDown = false;
+        _secondaryCooldownCoroutine = null;
+        EvaluateObjectiveVisibilityFromMaster();
     }
 
     private void InitializeRoomPropertiesIfNeeded()
@@ -278,9 +395,19 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             defaults[BellRingCountKey] = 0;
         }
 
-        if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(BellTaskValueKey))
+        if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(SecondaryVisibleKey))
         {
-            defaults[BellTaskValueKey] = initialTaskValue;
+            defaults[SecondaryVisibleKey] = false;
+        }
+
+        if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(SecondaryInteractionCountKey))
+        {
+            defaults[SecondaryInteractionCountKey] = 0;
+        }
+
+        if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(RitualTaskValueKey))
+        {
+            defaults[RitualTaskValueKey] = initialTaskValue;
         }
 
         if (defaults.Count > 0)
@@ -301,15 +428,25 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             _completedRings = Mathf.Clamp(ringCount, 0, totalRingsRequired);
         }
 
-        if (propertiesThatChanged.TryGetValue(BellTaskValueKey, out object taskValueObj) && taskValueObj is int taskValue)
+        if (propertiesThatChanged.TryGetValue(SecondaryVisibleKey, out object secondaryVisibleObj) && secondaryVisibleObj is bool secondaryVisible)
+        {
+            SetSecondaryVisibleLocal(secondaryVisible);
+        }
+
+        if (propertiesThatChanged.TryGetValue(SecondaryInteractionCountKey, out object secondaryCountObj) && secondaryCountObj is int secondaryCount)
+        {
+            _secondaryInteractionsCompleted = Mathf.Clamp(secondaryCount, 0, secondaryInteractionsRequired);
+        }
+
+        if (propertiesThatChanged.TryGetValue(RitualTaskValueKey, out object taskValueObj) && taskValueObj is int taskValue)
         {
             _taskValue = taskValue;
             UpdateTaskUI();
         }
 
-        if (PhotonNetwork.IsMasterClient && !_isCoolingDown)
+        if (PhotonNetwork.IsMasterClient)
         {
-            TryShowBellFromMaster();
+            EvaluateObjectiveVisibilityFromMaster();
         }
     }
 
@@ -320,13 +457,9 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
-        if (_completedRings >= totalRingsRequired)
-        {
-            return;
-        }
-
-        StopCooldown();
-        TryShowBellFromMaster();
+        StopBellCooldown();
+        StopSecondaryCooldown();
+        EvaluateObjectiveVisibilityFromMaster();
     }
 
     private void SyncFromRoomProperties()
@@ -334,7 +467,9 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (!PhotonNetwork.InRoom)
         {
             SetBellVisibleLocal(false);
+            SetSecondaryVisibleLocal(false);
             _completedRings = 0;
+            _secondaryInteractionsCompleted = 0;
             _taskValue = initialTaskValue;
             UpdateTaskUI();
             return;
@@ -358,7 +493,25 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             _completedRings = 0;
         }
 
-        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(BellTaskValueKey, out object taskValueObj) && taskValueObj is int taskValue)
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(SecondaryVisibleKey, out object secondaryVisibleObj) && secondaryVisibleObj is bool secondaryVisible)
+        {
+            SetSecondaryVisibleLocal(secondaryVisible);
+        }
+        else
+        {
+            SetSecondaryVisibleLocal(false);
+        }
+
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(SecondaryInteractionCountKey, out object secondaryCountObj) && secondaryCountObj is int secondaryCount)
+        {
+            _secondaryInteractionsCompleted = Mathf.Clamp(secondaryCount, 0, secondaryInteractionsRequired);
+        }
+        else
+        {
+            _secondaryInteractionsCompleted = 0;
+        }
+
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(RitualTaskValueKey, out object taskValueObj) && taskValueObj is int taskValue)
         {
             _taskValue = taskValue;
         }
@@ -370,7 +523,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         UpdateTaskUI();
     }
 
-    private void SetRoomBellVisible(bool isVisible)
+    private void SetBellVisible(bool isVisible)
     {
         if (!PhotonNetwork.InRoom)
         {
@@ -412,6 +565,53 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         PhotonNetwork.CurrentRoom.SetCustomProperties(updatedProperties);
     }
 
+    private void SetSecondaryVisible(bool isVisible)
+    {
+        if (!PhotonNetwork.InRoom)
+        {
+            SetSecondaryVisibleLocal(isVisible);
+            return;
+        }
+
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        Hashtable updatedProperties = new Hashtable
+        {
+            { SecondaryVisibleKey, isVisible }
+        };
+
+        PhotonNetwork.CurrentRoom.SetCustomProperties(updatedProperties);
+    }
+
+    private void SetRoomSecondaryVisible(bool isVisible)
+    {
+        SetSecondaryVisible(isVisible);
+    }
+
+    private void SetRoomSecondaryCount(int count)
+    {
+        if (!PhotonNetwork.InRoom)
+        {
+            _secondaryInteractionsCompleted = count;
+            return;
+        }
+
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        Hashtable updatedProperties = new Hashtable
+        {
+            { SecondaryInteractionCountKey, count }
+        };
+
+        PhotonNetwork.CurrentRoom.SetCustomProperties(updatedProperties);
+    }
+
     private void SetRoomTaskValue(int taskValue)
     {
         if (!PhotonNetwork.InRoom)
@@ -428,7 +628,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         Hashtable updatedProperties = new Hashtable
         {
-            { BellTaskValueKey, taskValue }
+            { RitualTaskValueKey, taskValue }
         };
 
         PhotonNetwork.CurrentRoom.SetCustomProperties(updatedProperties);
@@ -446,7 +646,16 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (!isVisible)
         {
             _holdProgress = 0f;
-            SetPromptVisible(false);
+        }
+    }
+
+    private void SetSecondaryVisibleLocal(bool isVisible)
+    {
+        _isSecondaryVisible = isVisible;
+
+        if (secondaryTaskObject != null)
+        {
+            secondaryTaskObject.SetActive(isVisible);
         }
     }
 
@@ -470,7 +679,10 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     {
         _localPlayerInRange = null;
         _holdProgress = 0f;
-        StopCooldown();
+
+        StopBellCooldown();
+        StopSecondaryCooldown();
+
         SetPromptVisible(false);
     }
 }
