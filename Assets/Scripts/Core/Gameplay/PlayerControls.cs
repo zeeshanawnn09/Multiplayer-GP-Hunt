@@ -25,6 +25,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     public PlayerRole playerRole { get; private set; }
     public bool HasAssignedRole { get; private set; }
+    public bool IsPriest => HasAssignedRole && playerRole == PlayerRole.Priest;
+    public bool IsGhost => HasAssignedRole && playerRole == PlayerRole.Ghost;
+
+    private const string PriestLayerName = "PriestPlayer";
+    private const string GhostLayerName = "GhostPlayer";
 
     [SerializeField]
     float moveSpeed = 5f;
@@ -197,6 +202,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         {
             Debug.LogWarning($"  → Role {role} exceeds materials array length {materials.Length}");
         }
+
+        ApplyRoleLayer();
         
         // Display role on UI if this is the local player
         if (photonView.IsMine)
@@ -256,6 +263,49 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     {
         cam.transform.SetParent(camObject.transform);
         cam.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+    }
+
+    public void TeleportTo(Vector3 worldPosition)
+    {
+        if (controller == null)
+        {
+            controller = GetComponent<CharacterController>();
+        }
+
+        if (controller != null && controller.enabled)
+        {
+            controller.enabled = false;
+            transform.position = worldPosition;
+            controller.enabled = true;
+        }
+        else
+        {
+            transform.position = worldPosition;
+        }
+    }
+
+    private void ApplyRoleLayer()
+    {
+        string targetLayerName = playerRole == PlayerRole.Priest ? PriestLayerName : GhostLayerName;
+        int targetLayer = LayerMask.NameToLayer(targetLayerName);
+
+        if (targetLayer < 0)
+        {
+            Debug.LogWarning($"Layer '{targetLayerName}' is missing. Create it in Unity before using the ritual wall.");
+            return;
+        }
+
+        SetLayerRecursively(gameObject, targetLayer);
+    }
+
+    private void SetLayerRecursively(GameObject targetObject, int layer)
+    {
+        targetObject.layer = layer;
+
+        foreach (Transform child in targetObject.transform)
+        {
+            SetLayerRecursively(child.gameObject, layer);
+        }
     }
 
     public bool ConsumeInteractPressed()

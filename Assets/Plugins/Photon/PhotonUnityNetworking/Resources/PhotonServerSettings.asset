@@ -47,6 +47,7 @@ MonoBehaviour:
   - RPC_RequestLightLamp
   - RPC_SetLampLitState
   - RPC_RequestBellRing
+  - RPC_RequestSecondaryInteraction
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

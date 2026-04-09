@@ -19,6 +19,7 @@ public class RoomController : MonoBehaviourPunCallbacks
     private const int REQUIRED_PLAYERS = 4;
     private const int GHOST_COUNT = 1;
     private const int PRIEST_COUNT = 3;
+    private const float ROLE_ASSIGNMENT_TIMEOUT_SECONDS = 8f;
 
     private bool rolesAssigned = false;
 
@@ -33,7 +34,7 @@ public class RoomController : MonoBehaviourPunCallbacks
         // Check if we should assign roles (after a delay to ensure all players spawn and UI is ready)
         if (PhotonNetwork.IsMasterClient && PhotonNetwork.CurrentRoom.PlayerCount >= REQUIRED_PLAYERS)
         {
-            Invoke("AssignRolesToAllPlayers", 2f); // Increased delay to 2 seconds
+            StartCoroutine(AssignRolesWhenReady());
         }
     }
 
@@ -47,9 +48,35 @@ public class RoomController : MonoBehaviourPunCallbacks
         {
             if (PhotonNetwork.CurrentRoom.PlayerCount >= REQUIRED_PLAYERS && !rolesAssigned)
             {
-                // Add a small delay to ensure the new player's GameObject exists
-                Invoke("AssignRolesToAllPlayers", 0.5f);
+                StartCoroutine(AssignRolesWhenReady());
             }
+        }
+    }
+
+    private System.Collections.IEnumerator AssignRolesWhenReady()
+    {
+        float elapsedTime = 0f;
+
+        while (PhotonNetwork.IsMasterClient && PhotonNetwork.InRoom)
+        {
+            int roomPlayerCount = PhotonNetwork.CurrentRoom.PlayerCount;
+            int spawnedPlayerCount = FindObjectsByType<PlayerControls>(FindObjectsSortMode.None).Length;
+
+            if (roomPlayerCount >= REQUIRED_PLAYERS && spawnedPlayerCount >= roomPlayerCount)
+            {
+                AssignRolesToAllPlayers();
+                yield break;
+            }
+
+            if (elapsedTime >= ROLE_ASSIGNMENT_TIMEOUT_SECONDS)
+            {
+                Debug.LogWarning($"Timed out waiting for player objects. Room players={roomPlayerCount}, spawned player objects={spawnedPlayerCount}. Attempting role assignment anyway.");
+                AssignRolesToAllPlayers();
+                yield break;
+            }
+
+            elapsedTime += 0.25f;
+            yield return new WaitForSeconds(0.25f);
         }
     }
 
@@ -161,7 +188,7 @@ public class RoomController : MonoBehaviourPunCallbacks
             bool found = false;
             foreach (PlayerControls pControl in playerControls)
             {
-                if (pControl.photonView.Owner == player)
+                if (pControl.photonView != null && pControl.photonView.OwnerActorNr == player.ActorNumber)
                 {
                     pControl.photonView.RPC("AssignPlayerRole", RpcTarget.AllBuffered, (int)role);
                     Debug.Log($"✓ SUCCESS: Assigned role {role} to player {player.NickName} (ViewID: {pControl.photonView.ViewID})");
@@ -176,8 +203,13 @@ public class RoomController : MonoBehaviourPunCallbacks
             }
         }
 
-        rolesAssigned = true;
+        rolesAssigned = assignedCount == players.Length;
         Debug.Log($"Role assignment complete: {assignedCount}/{players.Length} players assigned");
+
+        if (!rolesAssigned)
+        {
+            Debug.LogWarning("Role assignment was not completed for every player. The master will be able to retry on the next join event.");
+        }
     }
 
     //Changes colour of connection text when initial player is spawned
