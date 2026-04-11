@@ -42,6 +42,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     public static GameObject localPlayerInstance;
 
+    [SerializeField]
+    private float flowerPickupRayDistance = 5f;
+
+    private int flowerCount;
+
     InputSystem_Actions inputActions;
     Vector2 moveInput;
     Vector2 lookInput;
@@ -92,6 +97,15 @@ public class PlayerControls : MonoBehaviourPunCallbacks
             TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayView(photonView.IsMine);
         }
         
+        // Hide cursor and setup crosshair for local player
+        if (photonView.IsMine)
+        {
+            Cursor.visible = false;
+            Cursor.lockState = CursorLockMode.Locked;
+            SetupCrosshair();
+            RefreshFlowerCountUI();
+        }
+        
         Invoke("FinishInvoke", 0.2f);
         
     }
@@ -106,6 +120,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks
             if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame)
             {
                 interactPressed = true;
+            }
+
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && IsPriest)
+            {
+                TryPickupFlower();
             }
 
             // Debug input values occasionally
@@ -147,6 +166,24 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         
     }
 
+    /// <summary>
+    /// Sets up the crosshair for the local player
+    /// </summary>
+    private void SetupCrosshair()
+    {
+        CrosshairUI crosshair = FindObjectOfType<CrosshairUI>();
+        
+        if (crosshair != null)
+        {
+            crosshair.ShowCrosshair();
+            Debug.Log("Crosshair setup complete for local player");
+        }
+        else
+        {
+            Debug.LogWarning("CrosshairUI component not found in scene! Please add the CrosshairUI script to your Canvas Image element.");
+        }
+    }
+
     //Sets character colour for each player
     [PunRPC]
     public void SetCharacterMat(int matIndex)
@@ -174,6 +211,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     {
         playerRole = (PlayerRole)role;
         HasAssignedRole = true;
+        flowerCount = 0;
         string localPlayerName = PhotonNetwork.LocalPlayer?.NickName ?? "Unknown";
         Debug.Log($"[RPC] AssignPlayerRole received on client '{localPlayerName}' for player '{photonView.Owner.NickName}': {playerRole} (IsMine: {photonView.IsMine}, ViewID: {photonView.ViewID})");
         
@@ -217,6 +255,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
             {
                 Debug.LogWarning("  → TestUI is null, cannot display role on UI");
             }
+
+            RefreshFlowerCountUI();
         }
         else
         {
@@ -263,6 +303,85 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     {
         cam.transform.SetParent(camObject.transform);
         cam.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+        playerCam = cam.GetComponent<Camera>();
+
+        if (playerCam == null)
+        {
+            playerCam = cam.GetComponentInChildren<Camera>(true);
+        }
+    }
+
+    private void TryPickupFlower()
+    {
+        Camera aimCamera = GetAimCamera();
+        if (aimCamera == null)
+        {
+            return;
+        }
+
+        Ray ray = new Ray(aimCamera.transform.position, aimCamera.transform.forward);
+        if (Physics.Raycast(ray, out RaycastHit hit, flowerPickupRayDistance))
+        {
+            FlowerPickup flowerPickup = hit.collider.GetComponentInParent<FlowerPickup>();
+            if (flowerPickup != null)
+            {
+                flowerPickup.RequestPickup();
+            }
+        }
+    }
+
+    private Camera GetAimCamera()
+    {
+        if (playerCam != null)
+        {
+            return playerCam;
+        }
+
+        if (camObject != null)
+        {
+            playerCam = camObject.GetComponentInChildren<Camera>(true);
+            if (playerCam != null)
+            {
+                return playerCam;
+            }
+        }
+
+        return Camera.main;
+    }
+
+    private void RefreshFlowerCountUI()
+    {
+        if (!photonView.IsMine || TestConnectionText.TestUI == null)
+        {
+            return;
+        }
+
+        TestConnectionText connectionText = TestConnectionText.TestUI.GetComponent<TestConnectionText>();
+        if (connectionText == null)
+        {
+            return;
+        }
+
+        if (IsPriest)
+        {
+            connectionText.DisplayFlowerCount(flowerCount);
+        }
+        else
+        {
+            connectionText.ClearFlowerCount();
+        }
+    }
+
+    [PunRPC]
+    public void RPC_RequestCollectFlower(int amount)
+    {
+        if (!photonView.IsMine || amount <= 0)
+        {
+            return;
+        }
+
+        flowerCount += amount;
+        RefreshFlowerCountUI();
     }
 
     public void TeleportTo(Vector3 worldPosition)

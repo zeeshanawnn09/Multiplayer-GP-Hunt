@@ -185,6 +185,7 @@ MonoBehaviour:
   moveSpeed: 5
   turnSpeed: 5
   cameraSpeed: 5
+  flowerPickupRayDistance: 5
 --- !u!114 &4420333507835083870
 MonoBehaviour:
   m_ObjectHideFlags: 0
