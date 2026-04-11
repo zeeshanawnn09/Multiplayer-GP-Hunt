@@ -9,6 +9,7 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     public TMP_Text ownerText;
     public TMP_Text roleText;
     public TMP_Text healthText;
+    public TMP_Text flowerCountText;
 
     public static GameObject TestUI;
 
@@ -80,6 +81,22 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
         if (healthText != null)
         {
             healthText.text = "Health: " + currentHealth + "/" + maxHealth;
+        }
+    }
+
+    public void DisplayFlowerCount(int currentCount)
+    {
+        if (flowerCountText != null)
+        {
+            flowerCountText.text = "Flowers: " + currentCount;
+        }
+    }
+
+    public void ClearFlowerCount()
+    {
+        if (flowerCountText != null)
+        {
+            flowerCountText.text = string.Empty;
         }
     }
 }
