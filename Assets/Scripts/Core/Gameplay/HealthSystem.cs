@@ -1,19 +1,31 @@
 using UnityEngine;
 using Photon.Pun;
+using System.Collections;
 
 public class HealthSystem : MonoBehaviourPun
 {
     [SerializeField]
     private int startingHealth = 100;
 
+    [SerializeField]
+    private float ghostRespawnDelaySeconds = 3f;
+
     public int CurrentHealth { get; private set; }
     public int MaxHealth => startingHealth;
 
     private bool _isDead;
     private bool _hasDisplayedHealth;
+    private PlayerControls _playerControls;
+    private PlayerRespawnSystem _playerRespawnSystem;
+    private CharacterController _characterController;
+    private Coroutine _ghostRespawnCoroutine;
 
     private void Start()
     {
+        _playerControls = GetComponent<PlayerControls>();
+        _playerRespawnSystem = GetComponent<PlayerRespawnSystem>();
+        _characterController = GetComponent<CharacterController>();
+
         CurrentHealth = startingHealth;
         UpdateLocalHealthUI();
     }
@@ -46,6 +58,70 @@ public class HealthSystem : MonoBehaviourPun
         {
             _isDead = true;
             Debug.Log($"{photonView.Owner?.NickName} has died.");
+
+            if (_playerControls != null && _playerControls.IsGhost)
+            {
+                StartGhostRespawnFlow();
+            }
+        }
+    }
+
+    private void StartGhostRespawnFlow()
+    {
+        if (_ghostRespawnCoroutine != null)
+        {
+            StopCoroutine(_ghostRespawnCoroutine);
+        }
+
+        photonView.RPC(nameof(RPC_SetVisualState), RpcTarget.All, false);
+
+        if (photonView.IsMine && _characterController != null)
+        {
+            _characterController.enabled = false;
+        }
+
+        _ghostRespawnCoroutine = StartCoroutine(GhostRespawnCoroutine());
+    }
+
+    private IEnumerator GhostRespawnCoroutine()
+    {
+        float waitSeconds = Mathf.Max(0f, ghostRespawnDelaySeconds);
+        if (waitSeconds > 0f)
+        {
+            yield return new WaitForSeconds(waitSeconds);
+        }
+
+        if (!photonView.IsMine)
+        {
+            yield break;
+        }
+
+        if (_playerRespawnSystem != null && _playerRespawnSystem.TryGetRespawnPosition(out Vector3 respawnPosition))
+        {
+            _playerControls?.TeleportTo(respawnPosition);
+        }
+
+        CurrentHealth = startingHealth;
+        _isDead = false;
+        _hasDisplayedHealth = false;
+
+        if (_characterController != null)
+        {
+            _characterController.enabled = true;
+        }
+
+        photonView.RPC(nameof(RPC_SetVisualState), RpcTarget.All, true);
+        UpdateLocalHealthUI();
+        _ghostRespawnCoroutine = null;
+    }
+
+    [PunRPC]
+    private void RPC_SetVisualState(bool isVisible)
+    {
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer rendererComponent in renderers)
+        {
+            rendererComponent.enabled = isVisible;
         }
     }
 

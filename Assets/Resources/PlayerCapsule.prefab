@@ -61,6 +61,7 @@ GameObject:
   - component: {fileID: 7729517619029916372}
   - component: {fileID: 4938135857390949417}
   - component: {fileID: 9116389031716398742}
+  - component: {fileID: 4514379010366019884}
   m_Layer: 0
   m_Name: PlayerCapsule
   m_TagString: Player
@@ -431,3 +432,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   startingHealth: 100
+  ghostRespawnDelaySeconds: 3
+--- !u!114 &4514379010366019884
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4879892127143676765}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ab0ccfe31bed8d44ad9081017fa2925, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  respawnPlatform: {fileID: 0}
+  respawnPlatformTag: GhostRespawnPlatform
+  respawnSurfacePadding: 0.1

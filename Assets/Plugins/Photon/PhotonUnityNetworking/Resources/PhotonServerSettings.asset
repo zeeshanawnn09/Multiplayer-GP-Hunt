@@ -51,6 +51,9 @@ MonoBehaviour:
   - RPC_RequestCollectFlower
   - RPC_SetFlowerAvailable
   - RPC_RequestFlowerOfferingCompletion
+  - RPC_RequestFlowerSmash
+  - RPC_RequestStartFlowerOffering
+  - RPC_SetVisualState
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

@@ -2,14 +2,18 @@ using System.Collections;
 using UnityEngine;
 using Photon.Pun;
 using Photon.Realtime;
+using ExitGames.Client.Photon;
 
 public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
 {
     [SerializeField]
-    private FlowerPickup flowerPrefab;
+    private GameObject flowerPrefab;
 
     [SerializeField]
     private Transform[] spawnPoints;
+
+    [SerializeField]
+    private float spawnSurfacePadding = 0.05f;
 
     [SerializeField]
     private int maxFlowersPerSpawnPoint = 5;
@@ -31,6 +35,7 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
         }
 
         InitializeSpawnPoints();
+        InitializeSharedFlowerCount();
         SpawnInitialFlowers();
     }
 
@@ -39,6 +44,7 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
         if (newMasterClient != null && newMasterClient.IsLocal)
         {
             InitializeSpawnPoints();
+            InitializeSharedFlowerCount();
 
             if (spawnedFlowerCounts == null || activeFlowers == null)
             {
@@ -129,7 +135,7 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
 
         GameObject spawnedFlowerObject = PhotonNetwork.InstantiateRoomObject(
             flowerPrefab.name,
-            spawnPoints[index].position,
+            GetSpawnPosition(spawnPoints[index]),
             spawnPoints[index].rotation);
 
         FlowerPickup flowerPickup = spawnedFlowerObject.GetComponent<FlowerPickup>();
@@ -171,10 +177,7 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
         activeFlowers[spawnPointIndex] = null;
         flowerPickup.MarkCollected();
 
-        if (requestingPlayer != null && requestingPlayer.photonView != null)
-        {
-            requestingPlayer.photonView.RPC("RPC_RequestCollectFlower", RpcTarget.All, 1);
-        }
+        IncrementSharedFlowerCount();
 
         PhotonNetwork.Destroy(flowerPickup.gameObject);
 
@@ -235,5 +238,134 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
         }
 
         SpawnFlowerAtIndex(spawnPointIndex);
+    }
+
+    private Vector3 GetSpawnPosition(Transform spawnPoint)
+    {
+        if (spawnPoint == null)
+        {
+            return Vector3.zero;
+        }
+
+        if (TryGetPlatformSurface(spawnPoint, out Vector3 surfaceCenter, out float surfaceTopY))
+        {
+            float flowerHalfHeight = GetFlowerPrefabHalfHeight();
+            return new Vector3(surfaceCenter.x, surfaceTopY + flowerHalfHeight + spawnSurfacePadding, surfaceCenter.z);
+        }
+
+        return spawnPoint.position + Vector3.up * spawnSurfacePadding;
+    }
+
+    private bool TryGetPlatformSurface(Transform spawnPoint, out Vector3 surfaceCenter, out float surfaceTopY)
+    {
+        surfaceCenter = spawnPoint.position;
+        surfaceTopY = spawnPoint.position.y;
+
+        Collider platformCollider = spawnPoint.GetComponent<Collider>();
+        if (platformCollider != null)
+        {
+            Bounds bounds = platformCollider.bounds;
+            surfaceCenter = bounds.center;
+            surfaceTopY = bounds.max.y;
+            return true;
+        }
+
+        Renderer platformRenderer = spawnPoint.GetComponentInChildren<Renderer>(true);
+        if (platformRenderer != null)
+        {
+            Bounds bounds = platformRenderer.bounds;
+            surfaceCenter = bounds.center;
+            surfaceTopY = bounds.max.y;
+            return true;
+        }
+
+        return false;
+    }
+
+    private float GetFlowerPrefabHalfHeight()
+    {
+        if (flowerPrefab == null)
+        {
+            return 0f;
+        }
+
+        Collider flowerCollider = flowerPrefab.GetComponent<Collider>();
+        if (flowerCollider is BoxCollider boxCollider)
+        {
+            return Mathf.Abs(boxCollider.size.y * flowerPrefab.transform.lossyScale.y) * 0.5f;
+        }
+
+        if (flowerCollider is SphereCollider sphereCollider)
+        {
+            float scale = Mathf.Max(Mathf.Abs(flowerPrefab.transform.lossyScale.x), Mathf.Abs(flowerPrefab.transform.lossyScale.z));
+            return Mathf.Abs(sphereCollider.radius * scale);
+        }
+
+        if (flowerCollider is CapsuleCollider capsuleCollider)
+        {
+            Vector3 scale = flowerPrefab.transform.lossyScale;
+            float radiusScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+
+            if (capsuleCollider.direction == 0)
+            {
+                return Mathf.Max(Mathf.Abs(capsuleCollider.radius * radiusScale), Mathf.Abs(capsuleCollider.height * scale.x) * 0.5f);
+            }
+
+            if (capsuleCollider.direction == 2)
+            {
+                return Mathf.Max(Mathf.Abs(capsuleCollider.radius * radiusScale), Mathf.Abs(capsuleCollider.height * scale.z) * 0.5f);
+            }
+
+            return Mathf.Max(Mathf.Abs(capsuleCollider.radius * radiusScale), Mathf.Abs(capsuleCollider.height * scale.y) * 0.5f);
+        }
+
+        MeshFilter flowerMeshFilter = flowerPrefab.GetComponentInChildren<MeshFilter>(true);
+        if (flowerMeshFilter != null && flowerMeshFilter.sharedMesh != null)
+        {
+            return Mathf.Abs(flowerMeshFilter.sharedMesh.bounds.size.y * flowerPrefab.transform.lossyScale.y) * 0.5f;
+        }
+
+        Renderer flowerRenderer = flowerPrefab.GetComponentInChildren<Renderer>(true);
+        if (flowerRenderer != null)
+        {
+            return flowerRenderer.bounds.extents.y;
+        }
+
+        return 0.5f;
+    }
+
+    private void InitializeSharedFlowerCount()
+    {
+        if (!PhotonNetwork.IsMasterClient || PhotonNetwork.CurrentRoom == null)
+        {
+            return;
+        }
+
+        if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(PlayerControls.FlowerCountRoomPropertyKey))
+        {
+            PhotonNetwork.CurrentRoom.SetCustomProperties(new ExitGames.Client.Photon.Hashtable
+            {
+                { PlayerControls.FlowerCountRoomPropertyKey, 0 }
+            });
+        }
+    }
+
+    private void IncrementSharedFlowerCount()
+    {
+        if (!PhotonNetwork.IsMasterClient || PhotonNetwork.CurrentRoom == null)
+        {
+            return;
+        }
+
+        int currentCount = 0;
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(PlayerControls.FlowerCountRoomPropertyKey, out object value) && value is int storedCount)
+        {
+            currentCount = storedCount;
+        }
+
+        PhotonNetwork.CurrentRoom.SetCustomProperties(new ExitGames.Client.Photon.Hashtable
+        {
+            { PlayerControls.FlowerCountRoomPropertyKey, currentCount + 1 }
+        });
     }
 }
