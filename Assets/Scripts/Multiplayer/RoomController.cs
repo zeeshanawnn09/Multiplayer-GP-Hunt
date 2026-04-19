@@ -21,6 +21,22 @@ public class RoomController : MonoBehaviourPunCallbacks
     private const int PRIEST_COUNT = 3;
     private const float ROLE_ASSIGNMENT_TIMEOUT_SECONDS = 8f;
 
+    [Header("Spawn Settings")]
+    [SerializeField]
+    private float spawnRange = 5f;
+
+    [SerializeField]
+    private float spawnRaycastStartHeight = 50f;
+
+    [SerializeField]
+    private float spawnRaycastDistance = 200f;
+
+    [SerializeField]
+    private float spawnSurfacePadding = 0.05f;
+
+    [SerializeField]
+    private LayerMask spawnGroundMask = ~0;
+
     private bool rolesAssigned = false;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -87,7 +103,7 @@ public class RoomController : MonoBehaviourPunCallbacks
         
         if (PlayerControls.localPlayerInstance == null)
         {
-            Vector3 spawnPos = new Vector3(Random.Range(-5f, 5f), 1, Random.Range(-5f, 5f));
+            Vector3 spawnPos = GetGroundedSpawnPosition();
             
             // Each client instantiates their own player - this automatically sets photonView.IsMine = true
             GameObject newCharacter = PhotonNetwork.Instantiate(playerCharacter.name, spawnPos, Quaternion.identity);
@@ -107,6 +123,41 @@ public class RoomController : MonoBehaviourPunCallbacks
         {
             Debug.Log($"Skipping spawn - localPlayerInstance already exists");
         }
+    }
+
+    private Vector3 GetGroundedSpawnPosition()
+    {
+        Vector3 horizontalSpawn = new Vector3(
+            Random.Range(-spawnRange, spawnRange),
+            0f,
+            Random.Range(-spawnRange, spawnRange));
+
+        Vector3 rayOrigin = horizontalSpawn + Vector3.up * spawnRaycastStartHeight;
+
+        if (Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit hit, spawnRaycastDistance, spawnGroundMask, QueryTriggerInteraction.Ignore))
+        {
+            float yOffset = GetSpawnYOffset();
+            Vector3 groundedSpawn = hit.point + Vector3.up * yOffset;
+            Debug.Log($"Grounded spawn resolved at {groundedSpawn} using hit object '{hit.collider.name}'");
+            return groundedSpawn;
+        }
+
+        Vector3 fallback = new Vector3(horizontalSpawn.x, 1f, horizontalSpawn.z);
+        Debug.LogWarning($"Ground raycast failed. Using fallback spawn position {fallback}");
+        return fallback;
+    }
+
+    private float GetSpawnYOffset()
+    {
+        if (playerCharacter != null && playerCharacter.TryGetComponent<CharacterController>(out CharacterController characterController))
+        {
+            // Place the CharacterController bottom on the hit point.
+            float bottomOffsetFromTransform = characterController.center.y - (characterController.height * 0.5f);
+            float requiredYOffset = -bottomOffsetFromTransform;
+            return requiredYOffset + characterController.skinWidth + spawnSurfacePadding;
+        }
+
+        return spawnSurfacePadding;
     }
     
     // Get the index of a player in the room (0-based)

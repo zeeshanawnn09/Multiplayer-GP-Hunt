@@ -10,8 +10,16 @@ public class HealthSystem : MonoBehaviourPun
     [SerializeField]
     private float ghostRespawnDelaySeconds = 3f;
 
+    [Header("Priest Death")]
+    [SerializeField]
+    private GameObject ashPotPrefab;
+
+    [SerializeField]
+    private Vector3 ashPotSpawnOffset = new Vector3(0f, 0.2f, 0f);
+
     public int CurrentHealth { get; private set; }
     public int MaxHealth => startingHealth;
+    public bool IsDead => _isDead;
 
     private bool _isDead;
     private bool _hasDisplayedHealth;
@@ -51,6 +59,12 @@ public class HealthSystem : MonoBehaviourPun
             return;
         }
 
+        ShieldSystem shieldSystem = GetComponent<ShieldSystem>();
+        if (shieldSystem != null && shieldSystem.IsShieldActive)
+        {
+            return;
+        }
+
         CurrentHealth = Mathf.Max(0, CurrentHealth - amount);
         UpdateLocalHealthUI();
 
@@ -58,12 +72,22 @@ public class HealthSystem : MonoBehaviourPun
         {
             _isDead = true;
             Debug.Log($"{photonView.Owner?.NickName} has died.");
+            photonView.RPC(nameof(RPC_SetPlayerDeadState), RpcTarget.All, true);
 
             if (_playerControls != null && _playerControls.IsGhost)
             {
                 StartGhostRespawnFlow();
+                return;
             }
+
+            StartPriestDeathFlow();
         }
+    }
+
+    [PunRPC]
+    public void RPC_ApplyDamage(int amount)
+    {
+        ApplyDamage(amount);
     }
 
     private void StartGhostRespawnFlow()
@@ -81,6 +105,24 @@ public class HealthSystem : MonoBehaviourPun
         }
 
         _ghostRespawnCoroutine = StartCoroutine(GhostRespawnCoroutine());
+    }
+
+    private void StartPriestDeathFlow()
+    {
+        photonView.RPC(nameof(RPC_SetVisualState), RpcTarget.All, false);
+
+        if (photonView.IsMine)
+        {
+            if (_characterController != null)
+            {
+                _characterController.enabled = false;
+            }
+
+            if (PhotonNetwork.InRoom)
+            {
+                photonView.RPC(nameof(RPC_RequestSpawnAshPot), RpcTarget.MasterClient, photonView.ViewID, transform.position + ashPotSpawnOffset);
+            }
+        }
     }
 
     private IEnumerator GhostRespawnCoroutine()
@@ -104,6 +146,7 @@ public class HealthSystem : MonoBehaviourPun
         CurrentHealth = startingHealth;
         _isDead = false;
         _hasDisplayedHealth = false;
+        photonView.RPC(nameof(RPC_SetPlayerDeadState), RpcTarget.All, false);
 
         if (_characterController != null)
         {
@@ -116,6 +159,50 @@ public class HealthSystem : MonoBehaviourPun
     }
 
     [PunRPC]
+    private void RPC_SetPlayerDeadState(bool isDead)
+    {
+        _isDead = isDead;
+        _playerControls?.RPC_SetDeadState(isDead);
+    }
+
+    [PunRPC]
+    private void RPC_RequestSpawnAshPot(int deadPlayerViewId, Vector3 spawnPosition)
+    {
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        AshPotPickup[] activePots = FindObjectsByType<AshPotPickup>(FindObjectsSortMode.None);
+        for (int i = 0; i < activePots.Length; i++)
+        {
+            if (activePots[i] != null && activePots[i].SourcePlayerViewId == deadPlayerViewId)
+            {
+                return;
+            }
+        }
+
+        if (ashPotPrefab == null)
+        {
+            Debug.LogWarning("Ash pot prefab is not assigned. Drag and drop an Ash Pot prefab into HealthSystem.");
+            return;
+        }
+
+        // Photon instantiates from Resources by prefab name, so we derive the name from the assigned prefab.
+        string prefabName = ashPotPrefab.name;
+        GameObject ashPotObject = PhotonNetwork.InstantiateRoomObject(prefabName, spawnPosition, Quaternion.identity);
+        AshPotPickup ashPotPickup = ashPotObject.GetComponent<AshPotPickup>();
+
+        if (ashPotPickup == null)
+        {
+            Debug.LogWarning($"Spawned ash pot prefab '{prefabName}' is missing AshPotPickup component.");
+            return;
+        }
+
+        ashPotPickup.Initialize(deadPlayerViewId);
+    }
+
+    [PunRPC]
     private void RPC_SetVisualState(bool isVisible)
     {
         Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
@@ -123,6 +210,36 @@ public class HealthSystem : MonoBehaviourPun
         {
             rendererComponent.enabled = isVisible;
         }
+    }
+
+    [PunRPC]
+    public void RPC_RespawnPriest(Vector3 respawnPosition)
+    {
+        Debug.Log($"[HealthSystem.RPC_RespawnPriest] Called for {photonView.Owner?.NickName} at position {respawnPosition}");
+
+        CurrentHealth = startingHealth;
+        _isDead = false;
+        _hasDisplayedHealth = false;
+        photonView.RPC(nameof(RPC_SetPlayerDeadState), RpcTarget.All, false);
+
+        if (photonView.IsMine)
+        {
+            if (_characterController != null)
+            {
+                _characterController.enabled = true;
+            }
+
+            _playerControls?.TeleportTo(respawnPosition);
+        }
+
+        photonView.RPC(nameof(RPC_SetVisualState), RpcTarget.All, true);
+
+        if (photonView.IsMine)
+        {
+            UpdateLocalHealthUI();
+        }
+
+        Debug.Log($"[HealthSystem.RPC_RespawnPriest] SUCCESS! {photonView.Owner?.NickName} has been respawned");
     }
 
     private void UpdateLocalHealthUI()
