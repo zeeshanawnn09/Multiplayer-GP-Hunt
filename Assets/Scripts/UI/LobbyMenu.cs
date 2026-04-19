@@ -33,6 +33,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
         if (!PhotonNetwork.IsConnected)
         {
             PhotonNetwork.PhotonServerSettings.AppSettings.AppVersion = gameVer;
+            PhotonNetwork.PhotonServerSettings.AppSettings.FixedRegion = "eu";
 
             PhotonNetwork.ConnectUsingSettings();
         }

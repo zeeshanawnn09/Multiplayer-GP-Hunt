@@ -38,6 +38,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [SerializeField] private int secondaryInteractionsRequired = 3;
     [SerializeField] private float secondaryMinCooldownSeconds = 5f;
     [SerializeField] private float secondaryMaxCooldownSeconds = 15f;
+    [SerializeField] private float secondaryRevealDelaySeconds = 5f;
 
     [Header("Flower Offering Cycle")]
     [SerializeField] private int minFlowersRequired = 5;
@@ -55,6 +56,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private const string BellRingCountKey = "BellRingCount";
     private const string SecondaryVisibleKey = "SecondaryVisible";
     private const string SecondaryInteractionCountKey = "SecondaryInteractionCount";
+    private const string SecondaryUnlockTimeKey = "SecondaryUnlockTime";
     private const string ShrineVisibleKey = "ShrineVisible";
     private const string FlowerRequiredKey = "FlowerOfferingRequired";
     private const string FlowerOfferingActiveKey = "FlowerOfferingActive";
@@ -80,6 +82,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private int _completedRings;
     private int _secondaryInteractionsCompleted;
+    private double _secondaryUnlockTime;
     private int _requiredFlowerCount;
     private int _offeringSmashCount;
     private double _offeringEndTime;
@@ -289,6 +292,17 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         return _secondaryInteractionsCompleted >= secondaryInteractionsRequired;
     }
 
+    private bool IsSecondaryRevealDelayComplete()
+    {
+        if (_secondaryUnlockTime <= 0d)
+        {
+            return true;
+        }
+
+        double now = PhotonNetwork.InRoom ? PhotonNetwork.Time : Time.timeAsDouble;
+        return now >= _secondaryUnlockTime;
+    }
+
     private bool IsFlowerOfferingObjectiveUnlocked()
     {
         return IsSecondaryObjectiveComplete();
@@ -336,6 +350,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
             bool shouldShowSecondary = IsSecondaryObjectiveUnlocked()
                 && !_isSecondaryCoolingDown
+                && IsSecondaryRevealDelayComplete()
                 && IsLampRequirementMet();
 
             if (shouldShowSecondary != _isSecondaryVisible)
@@ -497,6 +512,8 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         {
             SetRoomTaskValue(initialTaskValue + 1);
             SetRoomSecondaryCount(0);
+            double now = PhotonNetwork.InRoom ? PhotonNetwork.Time : Time.timeAsDouble;
+            SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
             SetRoomSecondaryVisible(false);
             StopBellCooldown();
             EvaluateObjectiveVisibilityFromMaster();
@@ -703,6 +720,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             defaults[SecondaryInteractionCountKey] = 0;
         }
 
+        if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(SecondaryUnlockTimeKey))
+        {
+            defaults[SecondaryUnlockTimeKey] = 0d;
+        }
+
         if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(ShrineVisibleKey))
         {
             defaults[ShrineVisibleKey] = false;
@@ -759,6 +781,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (propertiesThatChanged.TryGetValue(SecondaryInteractionCountKey, out object secondaryCountObj) && secondaryCountObj is int secondaryCount)
         {
             _secondaryInteractionsCompleted = Mathf.Clamp(secondaryCount, 0, secondaryInteractionsRequired);
+        }
+
+        if (propertiesThatChanged.TryGetValue(SecondaryUnlockTimeKey, out object secondaryUnlockObj) && secondaryUnlockObj is double secondaryUnlockTime)
+        {
+            _secondaryUnlockTime = secondaryUnlockTime;
         }
 
         if (propertiesThatChanged.TryGetValue(ShrineVisibleKey, out object shrineVisibleObj) && shrineVisibleObj is bool shrineVisible)
@@ -869,6 +896,15 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         else
         {
             _secondaryInteractionsCompleted = 0;
+        }
+
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(SecondaryUnlockTimeKey, out object secondaryUnlockObj) && secondaryUnlockObj is double secondaryUnlockTime)
+        {
+            _secondaryUnlockTime = secondaryUnlockTime;
+        }
+        else
+        {
+            _secondaryUnlockTime = 0d;
         }
 
         if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(ShrineVisibleKey, out object shrineVisibleObj) && shrineVisibleObj is bool shrineVisible)
@@ -1013,6 +1049,27 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         Hashtable updatedProperties = new Hashtable
         {
             { SecondaryInteractionCountKey, count }
+        };
+
+        PhotonNetwork.CurrentRoom.SetCustomProperties(updatedProperties);
+    }
+
+    private void SetRoomSecondaryUnlockTime(double unlockTime)
+    {
+        if (!PhotonNetwork.InRoom)
+        {
+            _secondaryUnlockTime = unlockTime;
+            return;
+        }
+
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        Hashtable updatedProperties = new Hashtable
+        {
+            { SecondaryUnlockTimeKey, unlockTime }
         };
 
         PhotonNetwork.CurrentRoom.SetCustomProperties(updatedProperties);

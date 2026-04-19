@@ -19,7 +19,7 @@ MonoBehaviour:
     AppIdVoice: d1d6c7d4-c999-4c55-b622-492602a2e186
     AppVersion: 0.0
     UseNameServer: 1
-    FixedRegion: 
+    FixedRegion: eu
     Server: 
     Port: 0
     ProxyServer: 
@@ -54,6 +54,23 @@ MonoBehaviour:
   - RPC_RequestFlowerSmash
   - RPC_RequestStartFlowerOffering
   - RPC_SetVisualState
+  - RPC_SpawnProjectileVisual
+  - RPC_ApplyDamage
+  - RPC_RequestPickup
+  - RPC_RequestSpawnAshPot
+  - RPC_SetAshPotCarriedState
+  - RPC_SetDeadState
+  - RPC_SetPlayerDeadState
+  - RPC_SetSourcePlayerViewId
+  - RPC_RequestRespawn
+  - RPC_RespawnPriest
+  - RPC_SetAshPotCarriedData
+  - RPC_SetShieldState
+  - RPC_RequestCollectSoul
+  - RPC_SetSoulCount
+  - RPC_RequestDropSoul
+  - RPC_SetPickupEnabled
+  - RPC_SetDroppedSoulState
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

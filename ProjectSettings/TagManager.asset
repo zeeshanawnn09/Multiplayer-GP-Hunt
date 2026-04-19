@@ -5,17 +5,18 @@ TagManager:
   serializedVersion: 3
   tags:
   - GhostRespawnPlatform
+  - Ground
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  - Ground
   - Water
   - UI
   - GhostPlayer
   - PriestPlayer
   - RitualWall
-  - 
+  - Traps
   - 
   - 
   - 

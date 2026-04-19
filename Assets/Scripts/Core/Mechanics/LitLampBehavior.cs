@@ -6,19 +6,26 @@ public class LitLampBehavior : MonoBehaviour
 {
     public GameObject Light;
     [SerializeField] private GameObject interactPrompt;
+    [SerializeField] private bool debugLogs = true;
 
     private bool _isLit = false;
     private PlayerControls _localPlayerInRange;
     private PhotonView _photonView;
+    private UnityEngine.Light _pointLight;
+
+    public bool IsLit => GetCurrentLitState();
 
     private void Awake()
     {
         _photonView = GetComponent<PhotonView>();
         EnsureLampLightReference();
 
-        if (Light != null)
+        _isLit = false;
+        ApplyLightState(_isLit);
+
+        if (debugLogs)
         {
-            Light.SetActive(_isLit);
+            Debug.Log($"[LitLampBehavior] Awake on '{name}'. PointLight found: {_pointLight != null}, ParentLightGO: {Light != null}");
         }
 
         SetPromptVisible(false);
@@ -63,7 +70,7 @@ public class LitLampBehavior : MonoBehaviour
 
         if (_localPlayerInRange.ConsumeInteractPressed())
         {
-            bool targetLitState = !_isLit;
+            bool targetLitState = !GetCurrentLitState();
 
             if (PhotonNetwork.InRoom && _photonView != null && _photonView.ViewID != 0)
             {
@@ -85,7 +92,7 @@ public class LitLampBehavior : MonoBehaviour
     [PunRPC]
     private void RPC_RequestLightLamp(bool targetLitState, PhotonMessageInfo info)
     {
-        if (!PhotonNetwork.IsMasterClient || _isLit == targetLitState)
+        if (!PhotonNetwork.IsMasterClient || GetCurrentLitState() == targetLitState)
         {
             return;
         }
@@ -107,12 +114,57 @@ public class LitLampBehavior : MonoBehaviour
     {
         _isLit = isLit;
 
-        if (Light != null)
+        ApplyLightState(_isLit);
+
+        if (debugLogs)
         {
-            Light.SetActive(_isLit);
+            Debug.Log($"[LitLampBehavior] '{name}' set lit state to {_isLit}. PointLight enabled: {_pointLight != null && _pointLight.enabled}");
         }
 
         SetPromptVisible(_localPlayerInRange != null);
+    }
+
+    public bool TryExtinguishFromSoul()
+    {
+        if (debugLogs)
+        {
+            Debug.Log($"[LitLampBehavior] Soul trying to extinguish '{name}'. Current lit state: {GetCurrentLitState()}");
+        }
+
+        if (!GetCurrentLitState())
+        {
+            return false;
+        }
+
+        if (!PhotonNetwork.InRoom || _photonView == null)
+        {
+            RPC_SetLampLitState(false);
+            if (LampProgressManager.Instance != null)
+            {
+                LampProgressManager.Instance.NotifyLampStateChangedLocalFallback(false);
+            }
+
+            return true;
+        }
+
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            return false;
+        }
+
+        _photonView.RPC(nameof(RPC_SetLampLitState), RpcTarget.AllBuffered, false);
+
+        if (LampProgressManager.Instance != null)
+        {
+            LampProgressManager.Instance.NotifyLampStateChangedByMaster(false);
+        }
+
+        if (debugLogs)
+        {
+            Debug.Log($"[LitLampBehavior] '{name}' extinguished by soul.");
+        }
+
+        return true;
     }
 
     private void OnDisable()
@@ -131,20 +183,68 @@ public class LitLampBehavior : MonoBehaviour
 
     private void EnsureLampLightReference()
     {
-        if (Light != null)
+        if (_pointLight != null)
         {
             return;
         }
 
-        UnityEngine.Light childPointLight = GetComponentInChildren<UnityEngine.Light>(true);
-        if (childPointLight != null)
+        _pointLight = GetComponentInChildren<UnityEngine.Light>(true);
+        if (_pointLight != null)
         {
-            Light = childPointLight.gameObject;
+            Light = _pointLight.gameObject;
         }
         else
         {
             Debug.LogWarning($"{name}: No Point Light found for LitLampBehavior. Assign a light object or add a child Light component.");
         }
+    }
+
+    private void ApplyLightState(bool isLit)
+    {
+        if (_pointLight != null)
+        {
+            _pointLight.enabled = isLit;
+        }
+
+        if (Light != null)
+        {
+            Light.SetActive(isLit);
+        }
+
+        if (debugLogs)
+        {
+            Debug.Log($"[LitLampBehavior] '{name}' ApplyLightState({isLit}) -> pointLightEnabled={_pointLight != null && _pointLight.enabled}");
+        }
+    }
+
+    private bool GetCurrentLitState()
+    {
+        if (_pointLight != null)
+        {
+            return _pointLight.enabled;
+        }
+
+        if (Light != null)
+        {
+            return Light.activeSelf;
+        }
+
+        return _isLit;
+    }
+
+    public Vector3 GetLightWorldPosition()
+    {
+        if (_pointLight != null)
+        {
+            return _pointLight.transform.position;
+        }
+
+        if (Light != null)
+        {
+            return Light.transform.position;
+        }
+
+        return transform.position;
     }
 
 }
