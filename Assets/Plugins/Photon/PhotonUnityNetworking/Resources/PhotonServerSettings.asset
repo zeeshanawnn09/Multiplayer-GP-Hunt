@@ -71,6 +71,7 @@ MonoBehaviour:
   - RPC_RequestDropSoul
   - RPC_SetPickupEnabled
   - RPC_SetDroppedSoulState
+  - RPC_PlayBellRingAnimation
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

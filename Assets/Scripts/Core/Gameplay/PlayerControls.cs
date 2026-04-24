@@ -28,6 +28,22 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     [SerializeField]
     Mesh[] meshes;
 
+    [Header("Character Visuals")]
+    [SerializeField]
+    private GameObject priestVisualRoot;
+
+    [SerializeField]
+    private GameObject ghostVisualRoot;
+
+    [SerializeField]
+    private Animator priestAnimator;
+
+    [SerializeField]
+    private string priestSpeedParameter = "Speed";
+
+    [SerializeField]
+    private float priestAnimationDampTime = 0.1f;
+
     public Camera playerCam;
 
     public PlayerRole playerRole { get; private set; }
@@ -57,6 +73,32 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     [SerializeField]
     private float soulDropRayDistance = 6f;
+
+    [Header("Ghost Vines")]
+    [SerializeField]
+    private int initialGhostVineCount = 6;
+
+    [SerializeField]
+    private string ghostVinePrefabName = "Trap_Wines";
+
+    [SerializeField]
+    private float ghostVinePlacementRayDistance = 10f;
+
+    [SerializeField]
+    private float ghostVineVerticalOffset = 0.05f;
+
+    [Header("Ghost Blood Pool")]
+    [SerializeField]
+    private int initialGhostBloodPoolCount = 6;
+
+    [SerializeField]
+    private string ghostBloodPoolPrefabName = "BloodPool";
+
+    [SerializeField]
+    private float ghostBloodPoolPlacementRayDistance = 10f;
+
+    [SerializeField]
+    private float ghostBloodPoolVerticalOffset = 0.05f;
 
     [SerializeField]
     private float ashPotPickupRayDistance = 5f;
@@ -108,6 +150,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     private int flowerCount;
     private int soulCount;
+    private int ghostVineCount;
+    private int ghostBloodPoolCount;
     private int activeDroppedSoulViewId = -1;
     private bool hasAshPot;
     private int carriedAshPotSourcePlayerViewId = -1;
@@ -120,6 +164,9 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     private int shotsFiredInCurrentBurst;
     private float burstCooldownEndTime;
     private Transform projectilePoolRoot;
+    private MeshRenderer rootMeshRenderer;
+    private MeshFilter rootMeshFilter;
+    private int priestSpeedParameterHash;
     private readonly Queue<PooledProjectile> availableProjectiles = new Queue<PooledProjectile>();
     private readonly List<PooledProjectile> pooledProjectiles = new List<PooledProjectile>();
 
@@ -130,6 +177,15 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     private void Awake()
     {
+        rootMeshRenderer = GetComponent<MeshRenderer>();
+        rootMeshFilter = GetComponent<MeshFilter>();
+        priestSpeedParameterHash = Animator.StringToHash(priestSpeedParameter);
+
+        if (priestAnimator == null && priestVisualRoot != null)
+        {
+            priestAnimator = priestVisualRoot.GetComponentInChildren<Animator>(true);
+        }
+
         inputActions = new InputSystem_Actions();
         inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
         inputActions.Player.Move.canceled += _ => moveInput = Vector2.zero;
@@ -171,6 +227,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     {
         controller = GetComponent<CharacterController>();
         EnsureProjectilePool();
+        ApplyRoleVisuals();
 
         Debug.Log($"Player spawned! IsMine: {photonView.IsMine}, Owner: {photonView.Owner}, ViewID: {photonView.ViewID}");
 
@@ -201,6 +258,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
             }
 
             HandleSoulDropInput();
+            HandleVineDropInput();
+            HandleBloodPoolDropInput();
 
             if (Time.frameCount % 120 == 0 && (moveInput != Vector2.zero || lookInput != Vector2.zero))
             {
@@ -209,6 +268,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
             ProcessMovement();
             ProcessTurn();
+            UpdateLocalPriestAnimation();
         }
 
         if (TestConnectionText.TestUI != null && photonView.Owner != null)
@@ -254,6 +314,131 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         if (Physics.Raycast(downRay, out RaycastHit floorHit, 6f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
         {
             return floorHit.point + Vector3.up * 0.15f;
+        }
+
+        return fallbackPosition;
+    }
+
+    private void HandleVineDropInput()
+    {
+        if (!HasAssignedRole || !IsGhost || isDead || Keyboard.current == null || ghostVineCount <= 0)
+        {
+            return;
+        }
+
+        if (!Keyboard.current.vKey.wasPressedThisFrame)
+        {
+            return;
+        }
+
+        Vector3 spawnPosition = GetGhostPlacementPosition(ghostVinePlacementRayDistance, ghostVineVerticalOffset);
+        Quaternion spawnRotation = Quaternion.LookRotation(Vector3.ProjectOnPlane(transform.forward, Vector3.up), Vector3.up);
+
+        bool placed = false;
+        if (PhotonNetwork.InRoom)
+        {
+            if (string.IsNullOrWhiteSpace(ghostVinePrefabName))
+            {
+                Debug.LogWarning("Ghost vine prefab name is empty. Assign a Resources prefab name in PlayerControls.");
+                return;
+            }
+
+            PhotonNetwork.Instantiate(ghostVinePrefabName, spawnPosition, spawnRotation);
+            placed = true;
+        }
+        else
+        {
+            GameObject offlinePrefab = Resources.Load<GameObject>(ghostVinePrefabName);
+            if (offlinePrefab == null)
+            {
+                Debug.LogWarning($"Ghost vine prefab '{ghostVinePrefabName}' was not found in Resources for offline placement.");
+                return;
+            }
+
+            Instantiate(offlinePrefab, spawnPosition, spawnRotation);
+            placed = true;
+        }
+
+        if (!placed)
+        {
+            return;
+        }
+
+        ghostVineCount = Mathf.Max(0, ghostVineCount - 1);
+        Debug.Log($"Ghost vine placed. Remaining vines: {ghostVineCount}");
+    }
+
+    private void HandleBloodPoolDropInput()
+    {
+        if (!HasAssignedRole || !IsGhost || isDead || Keyboard.current == null || ghostBloodPoolCount <= 0)
+        {
+            return;
+        }
+
+        if (!Keyboard.current.bKey.wasPressedThisFrame)
+        {
+            return;
+        }
+
+        Vector3 spawnPosition = GetGhostPlacementPosition(ghostBloodPoolPlacementRayDistance, ghostBloodPoolVerticalOffset);
+        Quaternion spawnRotation = Quaternion.LookRotation(Vector3.ProjectOnPlane(transform.forward, Vector3.up), Vector3.up);
+
+        bool placed = false;
+        if (PhotonNetwork.InRoom)
+        {
+            if (string.IsNullOrWhiteSpace(ghostBloodPoolPrefabName))
+            {
+                Debug.LogWarning("Ghost blood pool prefab name is empty. Assign a Resources prefab name in PlayerControls.");
+                return;
+            }
+
+            PhotonNetwork.Instantiate(ghostBloodPoolPrefabName, spawnPosition, spawnRotation);
+            placed = true;
+        }
+        else
+        {
+            GameObject offlinePrefab = Resources.Load<GameObject>(ghostBloodPoolPrefabName);
+            if (offlinePrefab == null)
+            {
+                Debug.LogWarning($"Ghost blood pool prefab '{ghostBloodPoolPrefabName}' was not found in Resources for offline placement.");
+                return;
+            }
+
+            Instantiate(offlinePrefab, spawnPosition, spawnRotation);
+            placed = true;
+        }
+
+        if (!placed)
+        {
+            return;
+        }
+
+        ghostBloodPoolCount = Mathf.Max(0, ghostBloodPoolCount - 1);
+        Debug.Log($"Ghost blood pool placed. Remaining pools: {ghostBloodPoolCount}");
+    }
+
+    private Vector3 GetGhostPlacementPosition(float rayDistance, float verticalOffset)
+    {
+        Camera aimCamera = GetAimCamera();
+        Vector3 fallbackPosition = transform.position + transform.forward * 1.2f;
+        fallbackPosition.y = transform.position.y + verticalOffset;
+
+        if (aimCamera == null)
+        {
+            return fallbackPosition;
+        }
+
+        Ray aimRay = new Ray(aimCamera.transform.position, aimCamera.transform.forward);
+        if (Physics.Raycast(aimRay, out RaycastHit hit, rayDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+        {
+            return hit.point + Vector3.up * verticalOffset;
+        }
+
+        Vector3 projectedPosition = aimCamera.transform.position + aimCamera.transform.forward * 2f;
+        Ray downRay = new Ray(projectedPosition + Vector3.up * 2f, Vector3.down);
+        if (Physics.Raycast(downRay, out RaycastHit floorHit, 6f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+        {
+            return floorHit.point + Vector3.up * verticalOffset;
         }
 
         return fallbackPosition;
@@ -358,10 +543,14 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     [PunRPC]
     public void SetCharacterMat(int matIndex)
     {
-        if (matIndex >= 0 && matIndex < materials.Length)
+        if (rootMeshRenderer != null && matIndex >= 0 && matIndex < materials.Length)
         {
-            GetComponent<MeshRenderer>().material = materials[matIndex];
+            rootMeshRenderer.material = materials[matIndex];
             print("MatCall: " + PhotonNetwork.CurrentRoom.PlayerCount);
+        }
+        else if (rootMeshRenderer == null)
+        {
+            Debug.Log("No MeshRenderer found on player root. Skipping material swap.");
         }
         else
         {
@@ -379,20 +568,26 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     {
         playerRole = (PlayerRole)role;
         HasAssignedRole = true;
+        ghostVineCount = IsGhost ? Mathf.Max(0, initialGhostVineCount) : 0;
+        ghostBloodPoolCount = IsGhost ? Mathf.Max(0, initialGhostBloodPoolCount) : 0;
         ResetBurstFireCycle();
         SyncFlowerCountFromRoom();
         string localPlayerName = PhotonNetwork.LocalPlayer?.NickName ?? "Unknown";
         Debug.Log($"[RPC] AssignPlayerRole received on client '{localPlayerName}' for player '{photonView.Owner.NickName}': {playerRole} (IsMine: {photonView.IsMine}, ViewID: {photonView.ViewID})");
 
-        if (role < materials.Length)
+        if (rootMeshRenderer != null && role < materials.Length)
         {
-            GetComponent<MeshRenderer>().material = materials[role];
+            rootMeshRenderer.material = materials[role];
             Debug.Log($"  → Applied material {role} for role {playerRole}");
 
-            if (role < meshes.Length && meshes[role] != null)
+            if (rootMeshFilter != null && role < meshes.Length && meshes[role] != null)
             {
-                GetComponent<MeshFilter>().mesh = meshes[role];
+                rootMeshFilter.mesh = meshes[role];
                 Debug.Log($"  → Applied mesh {role} for role {playerRole}");
+            }
+            else if (rootMeshFilter == null)
+            {
+                Debug.Log("No MeshFilter found on player root. Skipping mesh swap.");
             }
             else if (role >= meshes.Length)
             {
@@ -403,10 +598,17 @@ public class PlayerControls : MonoBehaviourPunCallbacks
                 Debug.LogWarning($"  → Mesh at index {role} is null");
             }
         }
+        else if (rootMeshRenderer == null)
+        {
+            Debug.Log("No MeshRenderer found on player root. Skipping material swap.");
+        }
         else
         {
             Debug.LogWarning($"  → Role {role} exceeds materials array length {materials.Length}");
         }
+
+        ApplyRoleVisuals();
+        UpdateLocalPriestAnimation(true);
 
         ApplyRoleLayer();
 
@@ -961,6 +1163,47 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         moveInput = Vector2.zero;
         lookInput = Vector2.zero;
         interactPressed = false;
+        UpdateLocalPriestAnimation(true);
+    }
+
+    private void ApplyRoleVisuals()
+    {
+        if (priestVisualRoot != null)
+        {
+            priestVisualRoot.SetActive(IsPriest);
+        }
+
+        if (ghostVisualRoot != null)
+        {
+            ghostVisualRoot.SetActive(IsGhost);
+        }
+
+        if (priestAnimator == null && priestVisualRoot != null)
+        {
+            priestAnimator = priestVisualRoot.GetComponentInChildren<Animator>(true);
+        }
+    }
+
+    private void UpdateLocalPriestAnimation(bool instant = false)
+    {
+        if (!photonView.IsMine || priestAnimator == null)
+        {
+            return;
+        }
+
+        float speed = 0f;
+        if (HasAssignedRole && IsPriest && !isDead && !isImmobilized)
+        {
+            speed = Mathf.Clamp01(moveInput.magnitude);
+        }
+
+        if (instant)
+        {
+            priestAnimator.SetFloat(priestSpeedParameterHash, speed);
+            return;
+        }
+
+        priestAnimator.SetFloat(priestSpeedParameterHash, speed, Mathf.Max(0f, priestAnimationDampTime), Time.deltaTime);
     }
 
     private void StartSpectateFollow()
