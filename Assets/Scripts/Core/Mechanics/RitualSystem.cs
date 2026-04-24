@@ -20,6 +20,12 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [Header("Flower Offering Setup")]
     [SerializeField] private GameObject shrineObject;
 
+    [Header("Ritual Door")]
+    [SerializeField] private Animator ritualDoorAnimator;
+    [SerializeField] private string ritualDoorOpenTrigger = "Open";
+    [SerializeField] private string ritualDoorCloseTrigger = "Close";
+    [SerializeField] private string ritualDoorIsOpenBool = "IsOpen";
+
     [Header("Interaction UI")]
     [SerializeField] private GameObject interactPrompt;
     [SerializeField] private TMP_Text interactPromptText;
@@ -94,9 +100,18 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private int _offeringSmashCount;
     private double _offeringEndTime;
     private int _taskValue;
+    private bool _isRitualDoorOpen;
+    private bool _hasDoorStateInitialized;
+    private int _doorOpenTriggerHash;
+    private int _doorCloseTriggerHash;
+    private int _doorIsOpenBoolHash;
 
     private void Awake()
     {
+        _doorOpenTriggerHash = string.IsNullOrEmpty(ritualDoorOpenTrigger) ? 0 : Animator.StringToHash(ritualDoorOpenTrigger);
+        _doorCloseTriggerHash = string.IsNullOrEmpty(ritualDoorCloseTrigger) ? 0 : Animator.StringToHash(ritualDoorCloseTrigger);
+        _doorIsOpenBoolHash = string.IsNullOrEmpty(ritualDoorIsOpenBool) ? 0 : Animator.StringToHash(ritualDoorIsOpenBool);
+
         if (bellObjects == null || bellObjects.Length == 0)
         {
             if (bellObject != null)
@@ -140,6 +155,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private void Start()
     {
         SyncFromRoomProperties();
+        UpdateRitualDoorStateFromLampProgress(forceInstantState: true);
 
         if (PhotonNetwork.InRoom && PhotonNetwork.IsMasterClient)
         {
@@ -150,6 +166,8 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void Update()
     {
+        UpdateRitualDoorStateFromLampProgress();
+
         if (PhotonNetwork.IsMasterClient && PhotonNetwork.InRoom)
         {
             EvaluateOfferingTimeoutFromMaster();
@@ -313,6 +331,70 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private bool IsLampRequirementMet()
     {
         return LampProgressManager.Instance != null && LampProgressManager.Instance.IsRitualReady;
+    }
+
+    private void UpdateRitualDoorStateFromLampProgress(bool forceInstantState = false)
+    {
+        bool shouldBeOpen = IsLampRequirementMet();
+
+        if (!_hasDoorStateInitialized)
+        {
+            _hasDoorStateInitialized = true;
+            SetRitualDoorState(shouldBeOpen, animateTransition: false);
+            return;
+        }
+
+        if (!forceInstantState && shouldBeOpen == _isRitualDoorOpen)
+        {
+            return;
+        }
+
+        SetRitualDoorState(shouldBeOpen, animateTransition: !forceInstantState);
+    }
+
+    private void SetRitualDoorState(bool isOpen, bool animateTransition)
+    {
+        _isRitualDoorOpen = isOpen;
+
+        if (ritualDoorAnimator == null)
+        {
+            return;
+        }
+
+        if (_doorIsOpenBoolHash != 0)
+        {
+            ritualDoorAnimator.SetBool(_doorIsOpenBoolHash, isOpen);
+        }
+
+        if (!animateTransition)
+        {
+            return;
+        }
+
+        if (isOpen)
+        {
+            if (_doorCloseTriggerHash != 0)
+            {
+                ritualDoorAnimator.ResetTrigger(_doorCloseTriggerHash);
+            }
+
+            if (_doorOpenTriggerHash != 0)
+            {
+                ritualDoorAnimator.SetTrigger(_doorOpenTriggerHash);
+            }
+        }
+        else
+        {
+            if (_doorOpenTriggerHash != 0)
+            {
+                ritualDoorAnimator.ResetTrigger(_doorOpenTriggerHash);
+            }
+
+            if (_doorCloseTriggerHash != 0)
+            {
+                ritualDoorAnimator.SetTrigger(_doorCloseTriggerHash);
+            }
+        }
     }
 
     private bool IsAnyObjectiveVisible()

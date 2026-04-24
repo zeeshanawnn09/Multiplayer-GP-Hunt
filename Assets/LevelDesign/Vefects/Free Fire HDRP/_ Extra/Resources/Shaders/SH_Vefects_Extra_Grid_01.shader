@@ -1,4 +1,4 @@
-// Made with Amplify Shader Editor v1.9.7.1
+// Made with Amplify Shader Editor v1.9.8
 // Available at the Unity Asset Store - http://u3d.as/y3X 
 Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 {
@@ -341,7 +341,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
             #define _SPECULAR_OCCLUSION_FROM_AO 1
             #pragma multi_compile_instancing
             #pragma instancing_options renderinglayer
-            #define ASE_VERSION 19701
+            #define ASE_VERSION 19800
             #define ASE_SRP_VERSION 150006
 
             #pragma multi_compile _ DOTS_INSTANCING_ON
@@ -534,12 +534,13 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			struct PackedVaryingsMeshToPS
 			{
 				SV_POSITION_QUALIFIERS float4 positionCS : SV_Position;
-				float3 positionRWS : TEXCOORD0;
-				float3 normalWS : TEXCOORD1;
-				float4 tangentWS : TEXCOORD2;
-				float4 uv1 : TEXCOORD3;
-				float4 uv2 : TEXCOORD4;
-				float4 ase_texcoord5 : TEXCOORD5;
+				float4 clipPosV : TEXCOORD0;
+				float3 positionRWS : TEXCOORD1;
+				float3 normalWS : TEXCOORD2;
+				float4 tangentWS : TEXCOORD3;
+				float4 uv1 : TEXCOORD4;
+				float4 uv2 : TEXCOORD5;
+				float4 ase_texcoord6 : TEXCOORD6;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 				#if defined(SHADER_STAGE_FRAGMENT) && defined(ASE_NEED_CULLFACE)
@@ -767,16 +768,16 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh )
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS;
+				PackedVaryingsMeshToPS output;
 
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
-				outputPackedVaryingsMeshToPS.ase_texcoord5.xy = inputMesh.ase_texcoord.xy;
+				output.ase_texcoord6.xy = inputMesh.ase_texcoord.xy;
 				
 				//setting value to unused interpolator channels and avoid initialization warnings
-				outputPackedVaryingsMeshToPS.ase_texcoord5.zw = 0;
+				output.ase_texcoord6.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 				float3 defaultVertexValue = inputMesh.positionOS.xyz;
@@ -798,13 +799,14 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				float3 normalWS = TransformObjectToWorldNormal(inputMesh.normalOS);
 				float4 tangentWS = float4(TransformObjectToWorldDir(inputMesh.tangentOS.xyz), inputMesh.tangentOS.w);
 
-				outputPackedVaryingsMeshToPS.positionCS = TransformWorldToHClip(positionRWS);
-				outputPackedVaryingsMeshToPS.positionRWS.xyz = positionRWS;
-				outputPackedVaryingsMeshToPS.normalWS.xyz = normalWS;
-				outputPackedVaryingsMeshToPS.tangentWS.xyzw = tangentWS;
-				outputPackedVaryingsMeshToPS.uv1.xyzw = inputMesh.uv1;
-				outputPackedVaryingsMeshToPS.uv2.xyzw = inputMesh.uv2;
-				return outputPackedVaryingsMeshToPS;
+				output.positionCS = TransformWorldToHClip(positionRWS);
+				output.clipPosV = output.positionCS;
+				output.positionRWS = positionRWS;
+				output.normalWS = normalWS;
+				output.tangentWS = tangentWS;
+				output.uv1 = inputMesh.uv1;
+				output.uv2 = inputMesh.uv2;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -909,19 +911,21 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 						
 						)
 			{
-
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( packedInput );
 				UNITY_SETUP_INSTANCE_ID( packedInput );
+
+				float3 PositionRWS = packedInput.positionRWS;
+				float3 V = GetWorldSpaceNormalizeViewDir( packedInput.positionRWS );
+				float3 NormalWS = packedInput.normalWS;
+				float4 TangentWS = packedInput.tangentWS;
+				float4 ClipPos = packedInput.clipPosV;
+				float4 ScreenPos = ComputeScreenPos( packedInput.clipPosV, _ProjectionParams.x );
+
 				FragInputs input;
 				ZERO_INITIALIZE(FragInputs, input);
-				input.tangentToWorld = k_identity3x3;
-				float3 positionRWS = packedInput.positionRWS.xyz;
-				float3 normalWS = packedInput.normalWS.xyz;
-				float4 tangentWS = packedInput.tangentWS.xyzw;
-
 				input.positionSS = packedInput.positionCS;
-				input.positionRWS = positionRWS;
-				input.tangentToWorld = BuildTangentToWorld(tangentWS, normalWS);
+				input.positionRWS = PositionRWS;
+				input.tangentToWorld = BuildTangentToWorld(TangentWS, NormalWS);
 				input.texCoord1 = packedInput.uv1.xyzw;
 				input.texCoord2 = packedInput.uv2.xyzw;
 
@@ -932,15 +936,15 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false );
 				#endif
 				#endif
-				half isFrontFace = input.isFrontFace;
+				half IsFrontFace = input.isFrontFace;
 
 				PositionInputs posInput = GetPositionInput(input.positionSS.xy, _ScreenSize.zw, input.positionSS.z, input.positionSS.w, input.positionRWS);
-				float3 V = GetWorldSpaceNormalizeViewDir(input.positionRWS);
+				
 				SurfaceData surfaceData;
 				BuiltinData builtinData;
 
 				GlobalSurfaceDescription surfaceDescription = (GlobalSurfaceDescription)0;
-				float2 uv_Texture = packedInput.ase_texcoord5.xy * _Texture_ST.xy + _Texture_ST.zw;
+				float2 uv_Texture = packedInput.ase_texcoord6.xy * _Texture_ST.xy + _Texture_ST.zw;
 				
 				surfaceDescription.BaseColor = ( tex2D( _Texture, uv_Texture ) * float4( _Color.rgb , 0.0 ) ).rgb;
 				surfaceDescription.Normal = float3( 0, 0, 1 );
@@ -1049,7 +1053,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma shader_feature _ EDITOR_VISUALIZATION
@@ -1477,15 +1481,15 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh  )
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS;
+				PackedVaryingsMeshToPS output;
 
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
 
-				outputPackedVaryingsMeshToPS.ase_texcoord2.xy = inputMesh.uv0.xy;
+				output.ase_texcoord2.xy = inputMesh.uv0.xy;
 				
 				//setting value to unused interpolator channels and avoid initialization warnings
-				outputPackedVaryingsMeshToPS.ase_texcoord2.zw = 0;
+				output.ase_texcoord2.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 				float3 defaultVertexValue = inputMesh.positionOS.xyz;
@@ -1503,18 +1507,18 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				inputMesh.normalOS =  inputMesh.normalOS ;
 				inputMesh.tangentOS =  inputMesh.tangentOS ;
 
-				outputPackedVaryingsMeshToPS.positionCS = UnityMetaVertexPosition(inputMesh.positionOS, inputMesh.uv1.xy, inputMesh.uv2.xy, unity_LightmapST, unity_DynamicLightmapST);
+				output.positionCS = UnityMetaVertexPosition(inputMesh.positionOS, inputMesh.uv1.xy, inputMesh.uv2.xy, unity_LightmapST, unity_DynamicLightmapST);
 
 				#ifdef EDITOR_VISUALIZATION
 					float2 vizUV = 0;
 					float4 lightCoord = 0;
 					UnityEditorVizData(inputMesh.positionOS.xyz, inputMesh.uv0.xy, inputMesh.uv1.xy, inputMesh.uv2.xy, vizUV, lightCoord);
 
-					outputPackedVaryingsMeshToPS.VizUV.xy = vizUV;
-					outputPackedVaryingsMeshToPS.LightCoord = lightCoord;
+					output.VizUV.xy = vizUV;
+					output.LightCoord = lightCoord;
 				#endif
 
-				return outputPackedVaryingsMeshToPS;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -1741,7 +1745,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma multi_compile _ DOTS_INSTANCING_ON
@@ -1928,7 +1932,8 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			struct PackedVaryingsMeshToPS
 			{
 				SV_POSITION_QUALIFIERS float4 positionCS : SV_Position;
-				float3 positionRWS : TEXCOORD0;
+				float4 clipPosV : TEXCOORD0;
+				float3 positionRWS : TEXCOORD1;
 				
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
@@ -2105,10 +2110,10 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh )
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS;
+				PackedVaryingsMeshToPS output;
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
 				
 
@@ -2129,9 +2134,10 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				inputMesh.tangentOS = inputMesh.tangentOS;
 
 				float3 positionRWS = TransformObjectToWorld(inputMesh.positionOS);
-				outputPackedVaryingsMeshToPS.positionCS = TransformWorldToHClip(positionRWS);
-				outputPackedVaryingsMeshToPS.positionRWS.xyz = positionRWS;
-				return outputPackedVaryingsMeshToPS;
+				output.positionCS = TransformWorldToHClip(positionRWS);
+				output.clipPosV = output.positionCS;
+				output.positionRWS = positionRWS;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -2255,18 +2261,19 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 						
 					)
 			{
-			UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(packedInput);
-			UNITY_SETUP_INSTANCE_ID(packedInput);
-
-				float3 positionRWS = packedInput.positionRWS.xyz;
+				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(packedInput);
+				UNITY_SETUP_INSTANCE_ID(packedInput);
+		
+				float3 PositionRWS = packedInput.positionRWS;
+				float3 V = GetWorldSpaceNormalizeViewDir( packedInput.positionRWS );
+				float4 ClipPos = packedInput.clipPosV;
+				float4 ScreenPos = ComputeScreenPos( packedInput.clipPosV, _ProjectionParams.x );
 
 				FragInputs input;
 				ZERO_INITIALIZE(FragInputs, input);
-
 				input.tangentToWorld = k_identity3x3;
 				input.positionSS = packedInput.positionCS;
-
-				input.positionRWS = positionRWS;
+				input.positionRWS = PositionRWS;
 
 				#if _DOUBLESIDED_ON && SHADER_STAGE_FRAGMENT
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false);
@@ -2275,11 +2282,9 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false );
 				#endif
 				#endif
-				half isFrontFace = input.isFrontFace;
+				half IsFrontFace = input.isFrontFace;
 
 				PositionInputs posInput = GetPositionInput(input.positionSS.xy, _ScreenSize.zw, input.positionSS.z, input.positionSS.w, input.positionRWS);
-
-				float3 V = GetWorldSpaceNormalizeViewDir(input.positionRWS);
 
 				AlphaSurfaceDescription surfaceDescription = (AlphaSurfaceDescription)0;
 				
@@ -2316,15 +2321,15 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				EncodeIntoNormalBuffer(ConvertSurfaceDataToNormalData(surfaceData), outNormalBuffer);
 				#endif
 
-                #if (defined(WRITE_DECAL_BUFFER) && !defined(_DISABLE_DECALS)) || defined(WRITE_RENDERING_LAYER)
-				    DecalPrepassData decalPrepassData;
-                    #ifdef _DISABLE_DECALS
-				    ZERO_INITIALIZE(DecalPrepassData, decalPrepassData);
-                    #else
-				    decalPrepassData.geomNormalWS = surfaceData.geomNormalWS;
-                    #endif
-				    decalPrepassData.renderingLayerMask = GetMeshRenderingLayerMask();
-				    EncodeIntoDecalPrepassBuffer(decalPrepassData, outDecalBuffer);
+				#if (defined(WRITE_DECAL_BUFFER) && !defined(_DISABLE_DECALS)) || defined(WRITE_RENDERING_LAYER)
+					DecalPrepassData decalPrepassData;
+					#ifdef _DISABLE_DECALS
+					ZERO_INITIALIZE(DecalPrepassData, decalPrepassData);
+					#else
+					decalPrepassData.geomNormalWS = surfaceData.geomNormalWS;
+					#endif
+					decalPrepassData.renderingLayerMask = GetMeshRenderingLayerMask();
+					EncodeIntoDecalPrepassBuffer(decalPrepassData, outDecalBuffer);
 				#endif
 			}
 			ENDHLSL
@@ -2345,7 +2350,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma editor_sync_compilation
@@ -2712,10 +2717,10 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh )
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS;
+				PackedVaryingsMeshToPS output;
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
 				
 
@@ -2736,9 +2741,9 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				inputMesh.tangentOS = inputMesh.tangentOS;
 
 				float3 positionRWS = TransformObjectToWorld(inputMesh.positionOS);
-				outputPackedVaryingsMeshToPS.positionCS = TransformWorldToHClip(positionRWS);
-				outputPackedVaryingsMeshToPS.positionRWS.xyz = positionRWS;
-				return outputPackedVaryingsMeshToPS;
+				output.positionCS = TransformWorldToHClip(positionRWS);
+				output.positionRWS = positionRWS;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -2847,15 +2852,14 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( packedInput );
 				UNITY_SETUP_INSTANCE_ID( packedInput );
 
-				float3 positionRWS = packedInput.positionRWS.xyz;
+				float3 PositionRWS = packedInput.positionRWS;
+				float3 V = GetWorldSpaceNormalizeViewDir( packedInput.positionRWS );
 
 				FragInputs input;
 				ZERO_INITIALIZE(FragInputs, input);
-
 				input.tangentToWorld = k_identity3x3;
 				input.positionSS = packedInput.positionCS;
-
-				input.positionRWS = positionRWS;
+				input.positionRWS = PositionRWS;
 
 				#if _DOUBLESIDED_ON && SHADER_STAGE_FRAGMENT
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false);
@@ -2864,11 +2868,9 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false );
 				#endif
 				#endif
-				half isFrontFace = input.isFrontFace;
+				half IsFrontFace = input.isFrontFace;
 
 				PositionInputs posInput = GetPositionInput(input.positionSS.xy, _ScreenSize.zw, input.positionSS.z, input.positionSS.w, input.positionRWS);
-
-				float3 V = GetWorldSpaceNormalizeViewDir(input.positionRWS);
 
 				SceneSurfaceDescription surfaceDescription = (SceneSurfaceDescription)0;
 				
@@ -2920,7 +2922,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma multi_compile _ DOTS_INSTANCING_ON
@@ -3108,9 +3110,10 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			struct PackedVaryingsMeshToPS
 			{
 				SV_POSITION_QUALIFIERS float4 positionCS : SV_Position;
-				float3 positionRWS : TEXCOORD0;
-				float3 normalWS : TEXCOORD1;
-				float4 tangentWS : TEXCOORD2;
+				float4 clipPosV : TEXCOORD0;
+				float3 positionRWS : TEXCOORD1;
+				float3 normalWS : TEXCOORD2;
+				float4 tangentWS : TEXCOORD3;
 				
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
@@ -3296,11 +3299,11 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh )
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS;
+				PackedVaryingsMeshToPS output;
 
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
 				
 
@@ -3324,11 +3327,12 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				float3 normalWS = TransformObjectToWorldNormal(inputMesh.normalOS);
 				float4 tangentWS = float4(TransformObjectToWorldDir(inputMesh.tangentOS.xyz), inputMesh.tangentOS.w);
 
-				outputPackedVaryingsMeshToPS.positionCS = TransformWorldToHClip(positionRWS);
-				outputPackedVaryingsMeshToPS.positionRWS.xyz = positionRWS;
-				outputPackedVaryingsMeshToPS.normalWS.xyz = normalWS;
-				outputPackedVaryingsMeshToPS.tangentWS.xyzw = tangentWS;
-				return outputPackedVaryingsMeshToPS;
+				output.positionCS = TransformWorldToHClip(positionRWS);
+				output.clipPosV = output.positionCS;
+				output.positionRWS = positionRWS;
+				output.normalWS = normalWS;
+				output.tangentWS = tangentWS;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -3452,21 +3456,21 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 						
 					)
 			{
-			UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(packedInput);
-			UNITY_SETUP_INSTANCE_ID(packedInput);
+				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(packedInput);
+				UNITY_SETUP_INSTANCE_ID(packedInput);
 
-				float3 positionRWS = packedInput.positionRWS.xyz;
-				float3 normalWS = packedInput.normalWS.xyz;
-				float4 tangentWS = packedInput.tangentWS.xyzw;
-
+				float3 PositionRWS = packedInput.positionRWS;
+				float3 V = GetWorldSpaceNormalizeViewDir( packedInput.positionRWS );
+				float3 NormalWS = packedInput.normalWS;
+				float4 TangentWS = packedInput.tangentWS;
+				float4 ClipPos = packedInput.clipPosV;
+				float4 ScreenPos = ComputeScreenPos( packedInput.clipPosV, _ProjectionParams.x );
+		
 				FragInputs input;
 				ZERO_INITIALIZE(FragInputs, input);
-
-				input.tangentToWorld = k_identity3x3;
 				input.positionSS = packedInput.positionCS;
-
-				input.positionRWS = positionRWS;
-				input.tangentToWorld = BuildTangentToWorld(tangentWS, normalWS);
+				input.positionRWS = PositionRWS;
+				input.tangentToWorld = BuildTangentToWorld(TangentWS, NormalWS);
 
 				#if _DOUBLESIDED_ON && SHADER_STAGE_FRAGMENT
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false);
@@ -3475,11 +3479,9 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				input.isFrontFace = IS_FRONT_VFACE( packedInput.cullFace, true, false );
 				#endif
 				#endif
-				half isFrontFace = input.isFrontFace;
+				half IsFrontFace = input.isFrontFace;
 
 				PositionInputs posInput = GetPositionInput(input.positionSS.xy, _ScreenSize.zw, input.positionSS.z, input.positionSS.w, input.positionRWS);
-
-				float3 V = GetWorldSpaceNormalizeViewDir(input.positionRWS);
 
 				SmoothSurfaceDescription surfaceDescription = (SmoothSurfaceDescription)0;
 				
@@ -3566,7 +3568,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma multi_compile _ DOTS_INSTANCING_ON
@@ -3942,7 +3944,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
                 PostInitBuiltinData(V, posInput, surfaceData, builtinData);
 			}
 
-			AttributesMesh ApplyMeshModification(AttributesMesh inputMesh, float3 timeParameters, inout PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS )
+			AttributesMesh ApplyMeshModification(AttributesMesh inputMesh, float3 timeParameters, inout PackedVaryingsMeshToPS output )
 			{
 				_TimeParameters.xyz = timeParameters;
 				
@@ -3966,14 +3968,14 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh)
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS = (PackedVaryingsMeshToPS)0;
+				PackedVaryingsMeshToPS output = (PackedVaryingsMeshToPS)0;
 				AttributesMesh defaultMesh = inputMesh;
 
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
-				inputMesh = ApplyMeshModification( inputMesh, _TimeParameters.xyz, outputPackedVaryingsMeshToPS);
+				inputMesh = ApplyMeshModification( inputMesh, _TimeParameters.xyz, output);
 
 				float3 positionRWS = TransformObjectToWorld(inputMesh.positionOS);
 				float3 normalWS = TransformObjectToWorldNormal(inputMesh.normalOS);
@@ -4029,12 +4031,12 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 					VPASSpreviousPositionCS = mul(UNITY_MATRIX_PREV_VP, float4(previousPositionRWS, 1.0));
 				}
 
-				outputPackedVaryingsMeshToPS.vmeshPositionCS = VMESHpositionCS;
-				outputPackedVaryingsMeshToPS.vmeshInterp00.xyz = VMESHpositionRWS;
+				output.vmeshPositionCS = VMESHpositionCS;
+				output.vmeshInterp00.xyz = VMESHpositionRWS;
 
-				outputPackedVaryingsMeshToPS.vpassInterpolators0 = float3(VPASSpositionCS.xyw);
-				outputPackedVaryingsMeshToPS.vpassInterpolators1 = float3(VPASSpreviousPositionCS.xyw);
-				return outputPackedVaryingsMeshToPS;
+				output.vpassInterpolators0 = float3(VPASSpositionCS.xyw);
+				output.vpassInterpolators1 = float3(VPASSpreviousPositionCS.xyw);
+				return output;
 			}
 
 			#if (defined(WRITE_DECAL_BUFFER) && !defined(_DISABLE_DECALS)) || defined(WRITE_RENDERING_LAYER)
@@ -4276,7 +4278,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma multi_compile _ DOTS_INSTANCING_ON
@@ -4488,16 +4490,17 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			struct PackedVaryingsMeshToPS
 			{
 				SV_POSITION_QUALIFIERS float4 positionCS : SV_Position;
-				float3 positionRWS : TEXCOORD0;
-				float3 normalWS : TEXCOORD1;
-				float4 tangentWS : TEXCOORD2;
-				float4 uv1 : TEXCOORD3;
-				float4 uv2 : TEXCOORD4;
+				float4 clipPosV : TEXCOORD0;
+				float3 positionRWS : TEXCOORD1;
+				float3 normalWS : TEXCOORD2;
+				float4 tangentWS : TEXCOORD3;
+				float4 uv1 : TEXCOORD4;
+				float4 uv2 : TEXCOORD5;
 				#ifdef _WRITE_TRANSPARENT_MOTION_VECTOR
-					float3 vpassPositionCS : TEXCOORD5;
-					float3 vpassPreviousPositionCS : TEXCOORD6;
+					float3 vpassPositionCS : TEXCOORD6;
+					float3 vpassPreviousPositionCS : TEXCOORD7;
 				#endif
-				float4 ase_texcoord7 : TEXCOORD7;
+				float4 ase_texcoord8 : TEXCOORD8;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 				#if defined(SHADER_STAGE_FRAGMENT) && defined(ASE_NEED_CULLFACE)
@@ -4721,13 +4724,13 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				PostInitBuiltinData(V, posInput, surfaceData, builtinData);
 			}
 
-			AttributesMesh ApplyMeshModification(AttributesMesh inputMesh, float3 timeParameters, inout PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS )
+			AttributesMesh ApplyMeshModification(AttributesMesh inputMesh, float3 timeParameters, inout PackedVaryingsMeshToPS output )
 			{
 				_TimeParameters.xyz = timeParameters;
-				outputPackedVaryingsMeshToPS.ase_texcoord7.xy = inputMesh.ase_texcoord.xy;
+				output.ase_texcoord8.xy = inputMesh.ase_texcoord.xy;
 				
 				//setting value to unused interpolator channels and avoid initialization warnings
-				outputPackedVaryingsMeshToPS.ase_texcoord7.zw = 0;
+				output.ase_texcoord8.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 				float3 defaultVertexValue = inputMesh.positionOS.xyz;
@@ -4748,14 +4751,14 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh)
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS = (PackedVaryingsMeshToPS)0;
+				PackedVaryingsMeshToPS output = (PackedVaryingsMeshToPS)0;
 				AttributesMesh defaultMesh = inputMesh;
 
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
-				inputMesh = ApplyMeshModification( inputMesh, _TimeParameters.xyz, outputPackedVaryingsMeshToPS);
+				inputMesh = ApplyMeshModification( inputMesh, _TimeParameters.xyz, output);
 
 				float3 positionRWS = TransformObjectToWorld(inputMesh.positionOS);
 				float3 normalWS = TransformObjectToWorldNormal(inputMesh.normalOS);
@@ -4804,18 +4807,19 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				}
 				#endif
 
-				outputPackedVaryingsMeshToPS.positionCS = TransformWorldToHClip(positionRWS);
-				outputPackedVaryingsMeshToPS.positionRWS.xyz = positionRWS;
-				outputPackedVaryingsMeshToPS.normalWS.xyz = normalWS;
-				outputPackedVaryingsMeshToPS.tangentWS.xyzw = tangentWS;
-				outputPackedVaryingsMeshToPS.uv1.xyzw = inputMesh.uv1;
-				outputPackedVaryingsMeshToPS.uv2.xyzw = inputMesh.uv2;
+				output.positionCS = TransformWorldToHClip(positionRWS);
+				output.clipPosV = output.positionCS;
+				output.positionRWS = positionRWS;
+				output.normalWS = normalWS;
+				output.tangentWS = tangentWS;
+				output.uv1 = inputMesh.uv1;
+				output.uv2 = inputMesh.uv2;
 
 				#ifdef _WRITE_TRANSPARENT_MOTION_VECTOR
-					outputPackedVaryingsMeshToPS.vpassPositionCS = float3(VPASSpositionCS.xyw);
-					outputPackedVaryingsMeshToPS.vpassPreviousPositionCS = float3(VPASSpreviousPositionCS.xyw);
+					output.vpassPositionCS = float3(VPASSpositionCS.xyw);
+					output.vpassPreviousPositionCS = float3(VPASSpreviousPositionCS.xyw);
 				#endif
-				return outputPackedVaryingsMeshToPS;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -4956,16 +4960,19 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( packedInput );
 				UNITY_SETUP_INSTANCE_ID( packedInput );
-				float3 positionRWS = packedInput.positionRWS.xyz;
-				float3 normalWS = packedInput.normalWS.xyz;
-				float4 tangentWS = packedInput.tangentWS.xyzw;
+		
+				float3 PositionRWS = packedInput.positionRWS;
+				float3 V = GetWorldSpaceNormalizeViewDir( packedInput.positionRWS );
+				float3 NormalWS = packedInput.normalWS;
+				float4 TangentWS = packedInput.tangentWS;
+				float4 ClipPos = packedInput.clipPosV;
+				float4 ScreenPos = ComputeScreenPos( packedInput.clipPosV, _ProjectionParams.x );
 
 				FragInputs input;
 				ZERO_INITIALIZE(FragInputs, input);
-				input.tangentToWorld = k_identity3x3;
 				input.positionSS = packedInput.positionCS;
-				input.positionRWS = positionRWS;
-				input.tangentToWorld = BuildTangentToWorld(tangentWS, normalWS);
+				input.positionRWS = PositionRWS;
+				input.tangentToWorld = BuildTangentToWorld(TangentWS, NormalWS);
 				input.texCoord1 = packedInput.uv1.xyzw;
 				input.texCoord2 = packedInput.uv2.xyzw;
 
@@ -4976,17 +4983,15 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				input.isFrontFace = IS_FRONT_VFACE(packedInput.cullFace, true, false);
 				#endif
 				#endif
-				half isFrontFace = input.isFrontFace;
+				half IsFrontFace = input.isFrontFace;
 
 				AdjustFragInputsToOffScreenRendering(input, _OffScreenRendering > 0, _OffScreenDownsampleFactor);
 				uint2 tileIndex = uint2(input.positionSS.xy) / GetTileSize ();
 
 				PositionInputs posInput = GetPositionInput( input.positionSS.xy, _ScreenSize.zw, input.positionSS.z, input.positionSS.w, input.positionRWS.xyz, tileIndex );
 
-				float3 V = GetWorldSpaceNormalizeViewDir(input.positionRWS);
-
 				GlobalSurfaceDescription surfaceDescription = (GlobalSurfaceDescription)0;
-				float2 uv_Texture = packedInput.ase_texcoord7.xy * _Texture_ST.xy + _Texture_ST.zw;
+				float2 uv_Texture = packedInput.ase_texcoord8.xy * _Texture_ST.xy + _Texture_ST.zw;
 				
 				surfaceDescription.BaseColor = ( tex2D( _Texture, uv_Texture ) * float4( _Color.rgb , 0.0 ) ).rgb;
 				surfaceDescription.Normal = float3( 0, 0, 1 );
@@ -5181,7 +5186,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 			#define _SPECULAR_OCCLUSION_FROM_AO 1
 			#pragma multi_compile_instancing
 			#pragma instancing_options renderinglayer
-			#define ASE_VERSION 19701
+			#define ASE_VERSION 19800
 			#define ASE_SRP_VERSION 150006
 
 			#pragma editor_sync_compilation
@@ -5445,7 +5450,7 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
             }
 
-			AttributesMesh ApplyMeshModification(AttributesMesh inputMesh, float3 timeParameters, inout PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS )
+			AttributesMesh ApplyMeshModification(AttributesMesh inputMesh, float3 timeParameters, inout PackedVaryingsMeshToPS output )
 			{
 				_TimeParameters.xyz = timeParameters;
 				
@@ -5469,14 +5474,14 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 
 			PackedVaryingsMeshToPS VertexFunction(AttributesMesh inputMesh)
 			{
-				PackedVaryingsMeshToPS outputPackedVaryingsMeshToPS = (PackedVaryingsMeshToPS)0;
+				PackedVaryingsMeshToPS output = (PackedVaryingsMeshToPS)0;
 				AttributesMesh defaultMesh = inputMesh;
 
 				UNITY_SETUP_INSTANCE_ID(inputMesh);
-				UNITY_TRANSFER_INSTANCE_ID(inputMesh, outputPackedVaryingsMeshToPS);
-				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( outputPackedVaryingsMeshToPS );
+				UNITY_TRANSFER_INSTANCE_ID(inputMesh, output);
+				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( output );
 
-				inputMesh = ApplyMeshModification( inputMesh, _TimeParameters.xyz, outputPackedVaryingsMeshToPS);
+				inputMesh = ApplyMeshModification( inputMesh, _TimeParameters.xyz, output);
 
 				float3 positionRWS = TransformObjectToWorld(inputMesh.positionOS);
 				float3 normalWS = TransformObjectToWorldNormal(inputMesh.normalOS);
@@ -5525,18 +5530,18 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				}
 				#endif
 
-				outputPackedVaryingsMeshToPS.positionCS = TransformWorldToHClip(positionRWS);
-				outputPackedVaryingsMeshToPS.positionRWS.xyz = positionRWS;
-				outputPackedVaryingsMeshToPS.normalWS.xyz = normalWS;
-				outputPackedVaryingsMeshToPS.tangentWS.xyzw = tangentWS;
-				outputPackedVaryingsMeshToPS.uv1.xyzw = inputMesh.uv1;
-				outputPackedVaryingsMeshToPS.uv2.xyzw = inputMesh.uv2;
+				output.positionCS = TransformWorldToHClip(positionRWS);
+				output.positionRWS = positionRWS;
+				output.normalWS = normalWS;
+				output.tangentWS = tangentWS;
+				output.uv1 = inputMesh.uv1;
+				output.uv2 = inputMesh.uv2;
 
 				#ifdef _WRITE_TRANSPARENT_MOTION_VECTOR
-					outputPackedVaryingsMeshToPS.vpassPositionCS = float3(VPASSpositionCS.xyw);
-					outputPackedVaryingsMeshToPS.vpassPreviousPositionCS = float3(VPASSpreviousPositionCS.xyw);
+					output.vpassPositionCS = float3(VPASSpositionCS.xyw);
+					output.vpassPreviousPositionCS = float3(VPASSpreviousPositionCS.xyw);
 				#endif
-				return outputPackedVaryingsMeshToPS;
+				return output;
 			}
 
 			#if defined(ASE_TESSELLATION)
@@ -5660,17 +5665,16 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 						
 					)
 			{
-			UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(packedInput);
-			UNITY_SETUP_INSTANCE_ID(packedInput);
+				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(packedInput);
+				UNITY_SETUP_INSTANCE_ID(packedInput);
 
-				float3 positionRWS = packedInput.positionRWS.xyz;
+				float3 positionRWS = packedInput.positionRWS;
+				float3 V = GetWorldSpaceNormalizeViewDir( packedInput.positionRWS );
 
 				FragInputs input;
 				ZERO_INITIALIZE(FragInputs, input);
-
 				input.tangentToWorld = k_identity3x3;
 				input.positionSS = packedInput.positionCS;
-
 				input.positionRWS = positionRWS;
 
 				#if _DOUBLESIDED_ON && SHADER_STAGE_FRAGMENT
@@ -5683,8 +5687,6 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 				half isFrontFace = input.isFrontFace;
 
 				PositionInputs posInput = GetPositionInput(input.positionSS.xy, _ScreenSize.zw, input.positionSS.z, input.positionSS.w, input.positionRWS);
-
-				float3 V = GetWorldSpaceNormalizeViewDir(input.positionRWS);
 
 				PickingSurfaceDescription surfaceDescription = (PickingSurfaceDescription)0;
 				
@@ -5978,23 +5980,23 @@ Shader "/Vefects/SH_Vefects_Extra_Grid_01"
 	Fallback Off
 }
 /*ASEBEGIN
-Version=19701
-Node;AmplifyShaderEditor.SamplerNode;10;-768,0;Inherit;True;Property;_Texture;Texture;0;0;Create;True;0;0;0;False;0;False;-1;7e86780f8818d774781e18cdb159f2f7;7e86780f8818d774781e18cdb159f2f7;True;0;False;white;Auto;False;Object;-1;Auto;Texture2D;8;0;SAMPLER2D;;False;1;FLOAT2;0,0;False;2;FLOAT;0;False;3;FLOAT2;0,0;False;4;FLOAT2;0,0;False;5;FLOAT;1;False;6;FLOAT;0;False;7;SAMPLERSTATE;;False;6;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4;FLOAT3;5
-Node;AmplifyShaderEditor.SimpleMultiplyOpNode;11;-384,0;Inherit;False;2;2;0;COLOR;0,0,0,0;False;1;FLOAT3;0,0,0;False;1;COLOR;0
+Version=19800
+Node;AmplifyShaderEditor.SamplerNode;10;-768,0;Inherit;True;Property;_Texture;Texture;0;0;Create;True;0;0;0;False;0;False;-1;None;None;True;0;False;white;Auto;False;Object;-1;Auto;Texture2D;8;0;SAMPLER2D;;False;1;FLOAT2;0,0;False;2;FLOAT;0;False;3;FLOAT2;0,0;False;4;FLOAT2;0,0;False;5;FLOAT;1;False;6;FLOAT;0;False;7;SAMPLERSTATE;;False;6;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4;FLOAT3;5
 Node;AmplifyShaderEditor.ColorNode;22;-384,128;Inherit;False;Property;_Color;Color;1;0;Create;True;0;0;0;False;0;False;0.33,0.33,0.33,0;0,0,0,0;True;True;0;6;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4;FLOAT3;5
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;24;0,0;Float;False;True;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;12;/Vefects/SH_Vefects_Extra_Grid_01;53b46d85872c5b24c8f4f0a1c3fe4c87;True;GBuffer;0;0;GBuffer;34;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefGBuffer;255;False;;255;True;_StencilWriteMaskGBuffer;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;False;True;0;True;_ZTestGBuffer;False;True;1;LightMode=GBuffer;False;False;0;;0;0;Standard;38;Surface Type;0;0;  Rendering Pass;1;0;  Refraction Model;0;0;    Blending Mode;0;0;    Blend Preserves Specular;1;0;  Back Then Front Rendering;0;0;  Transparent Depth Prepass;0;0;  Transparent Depth Postpass;0;0;  ZWrite;0;0;  Z Test;4;0;Double-Sided;0;0;Alpha Clipping;0;0;  Use Shadow Threshold;0;0;Material Type,InvertActionOnDeselection;0;0;  Energy Conserving Specular;1;0;  Transmission,InvertActionOnDeselection;0;0;Receive Decals;1;0;Receive SSR;1;0;Receive SSR Transparent;0;0;Motion Vectors;1;0;  Add Precomputed Velocity;0;0;Specular AA;0;0;Specular Occlusion Mode;1;0;Override Baked GI;0;0;Depth Offset;0;0;  Conserative;1;0;GPU Instancing;1;0;LOD CrossFade;0;0;Tessellation;0;0;  Phong;0;0;  Strength;0.5,False,;0;  Type;0;0;  Tess;16,False,;0;  Min;10,False,;0;  Max;25,False,;0;  Edge Length;16,False,;0;  Max Displacement;25,False,;0;Vertex Position;1;0;0;11;True;True;True;True;True;True;False;False;False;True;True;False;;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;25;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;META;0;1;META;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=Meta;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;26;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;ShadowCaster;0;2;ShadowCaster;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;True;False;False;False;False;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;True;3;False;;False;True;1;LightMode=ShadowCaster;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;27;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;SceneSelectionPass;0;3;SceneSelectionPass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=SceneSelectionPass;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;28;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;DepthOnly;0;4;DepthOnly;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefDepth;255;False;;255;True;_StencilWriteMaskDepth;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;1;False;;False;False;True;1;LightMode=DepthOnly;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;29;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;MotionVectors;0;5;MotionVectors;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefMV;255;False;;255;True;_StencilWriteMaskMV;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;1;False;;False;False;True;1;LightMode=MotionVectors;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;30;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;TransparentBackface;0;6;TransparentBackface;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;True;2;5;False;;10;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;False;False;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelOne;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelTwo;False;False;False;False;False;True;0;True;_ZWrite;True;0;True;_ZTestTransparent;False;True;1;LightMode=TransparentBackface;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;31;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;TransparentDepthPrepass;0;7;TransparentDepthPrepass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;True;1;1;False;;0;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefDepth;255;False;;255;True;_StencilWriteMaskDepth;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;1;False;;False;False;True;1;LightMode=TransparentDepthPrepass;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;32;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;TransparentDepthPostpass;0;8;TransparentDepthPostpass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;True;1;1;False;;0;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;True;False;False;False;False;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;False;False;True;1;LightMode=TransparentDepthPostpass;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;33;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;Forward;0;9;Forward;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;True;2;5;False;;10;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;True;0;True;_CullModeForward;False;False;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelOne;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelTwo;False;False;False;True;True;0;True;_StencilRef;255;False;;255;True;_StencilWriteMask;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;0;True;_ZWrite;True;0;True;_ZTestDepthEqualForOpaque;False;True;1;LightMode=Forward;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;34;0,0;Float;False;False;-1;2;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;ScenePickingPass;0;10;ScenePickingPass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;True;3;False;;False;True;1;LightMode=Picking;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;11;-384,0;Inherit;False;2;2;0;COLOR;0,0,0,0;False;1;FLOAT3;0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;25;0,0;Float;False;True;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;12;/Vefects/SH_Vefects_Extra_Grid_01;53b46d85872c5b24c8f4f0a1c3fe4c87;True;GBuffer;0;0;GBuffer;34;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefGBuffer;255;False;;255;True;_StencilWriteMaskGBuffer;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;False;True;0;True;_ZTestGBuffer;False;True;1;LightMode=GBuffer;False;False;0;;0;0;Standard;38;Surface Type;0;0;  Rendering Pass;1;0;  Refraction Model;0;0;    Blending Mode;0;0;    Blend Preserves Specular;1;0;  Back Then Front Rendering;0;0;  Transparent Depth Prepass;0;0;  Transparent Depth Postpass;0;0;  ZWrite;0;0;  Z Test;4;0;Double-Sided;0;0;Alpha Clipping;0;0;  Use Shadow Threshold;0;0;Material Type,InvertActionOnDeselection;0;0;  Energy Conserving Specular;1;0;  Transmission,InvertActionOnDeselection;0;0;Receive Decals;1;0;Receive SSR;1;0;Receive SSR Transparent;0;0;Motion Vectors;1;0;  Add Precomputed Velocity;0;0;Specular AA;0;0;Specular Occlusion Mode;1;0;Override Baked GI;0;0;Depth Offset;0;0;  Conserative;1;0;GPU Instancing;1;0;LOD CrossFade;0;0;Tessellation;0;0;  Phong;0;0;  Strength;0.5,False,;0;  Type;0;0;  Tess;16,False,;0;  Min;10,False,;0;  Max;25,False,;0;  Edge Length;16,False,;0;  Max Displacement;25,False,;0;Vertex Position;1;0;0;11;True;True;True;True;True;True;False;False;False;True;True;False;;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;26;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;META;0;1;META;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=Meta;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;27;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;ShadowCaster;0;2;ShadowCaster;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;True;False;False;False;False;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;True;3;False;;False;True;1;LightMode=ShadowCaster;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;28;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;SceneSelectionPass;0;3;SceneSelectionPass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=SceneSelectionPass;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;29;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;DepthOnly;0;4;DepthOnly;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefDepth;255;False;;255;True;_StencilWriteMaskDepth;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;1;False;;False;False;True;1;LightMode=DepthOnly;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;30;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;MotionVectors;0;5;MotionVectors;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefMV;255;False;;255;True;_StencilWriteMaskMV;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;1;False;;False;False;True;1;LightMode=MotionVectors;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;31;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;TransparentBackface;0;6;TransparentBackface;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;True;2;5;False;;10;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;False;False;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelOne;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelTwo;False;False;False;False;False;True;0;True;_ZWrite;True;0;True;_ZTestTransparent;False;True;1;LightMode=TransparentBackface;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;32;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;TransparentDepthPrepass;0;7;TransparentDepthPrepass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;True;1;1;False;;0;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;True;True;0;True;_StencilRefDepth;255;False;;255;True;_StencilWriteMaskDepth;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;1;False;;False;False;True;1;LightMode=TransparentDepthPrepass;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;33;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;TransparentDepthPostpass;0;8;TransparentDepthPostpass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;True;1;1;False;;0;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;True;False;False;False;False;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;False;False;True;1;LightMode=TransparentDepthPostpass;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;34;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;Forward;0;9;Forward;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;True;2;5;False;;10;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;True;0;True;_CullModeForward;False;False;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelOne;False;True;True;True;True;True;0;True;_ColorMaskTransparentVelTwo;False;False;False;True;True;0;True;_StencilRef;255;False;;255;True;_StencilWriteMask;7;False;;3;False;;0;False;;0;False;;7;False;;3;False;;0;False;;0;False;;False;True;0;True;_ZWrite;True;0;True;_ZTestDepthEqualForOpaque;False;True;1;LightMode=Forward;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;35;0,0;Float;False;False;-1;3;Rendering.HighDefinition.LightingShaderGraphGUI;0;1;New Amplify Shader;53b46d85872c5b24c8f4f0a1c3fe4c87;True;ScenePickingPass;0;10;ScenePickingPass;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;3;RenderPipeline=HDRenderPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;5;True;7;d3d11;metal;vulkan;xboxone;xboxseries;playstation;switch;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;0;True;_CullMode;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;True;3;False;;False;True;1;LightMode=Picking;False;False;0;;0;0;Standard;0;False;0
 WireConnection;11;0;10;0
 WireConnection;11;1;22;5
-WireConnection;24;0;11;0
+WireConnection;25;0;11;0
 ASEEND*/
-//CHKSM=4172CAA7A7B43723E7E1E5635AA00EDBE4D54581
+//CHKSM=CB6E15BA0AC4627C3BC6EEC9EEB2F234C8EE740B
