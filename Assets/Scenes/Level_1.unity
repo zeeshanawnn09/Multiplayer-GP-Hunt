@@ -6511,8 +6511,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   bellObject: {fileID: 1762785694}
+  bellObjects: []
+  bellAnimator: {fileID: 0}
+  bellRingAnimationDurationSeconds: 1.5
   secondaryTaskObject: {fileID: 1222135230}
   shrineObject: {fileID: 1516552002}
+  ritualDoorAnimator: {fileID: 0}
+  ritualDoorOpenTrigger: Open
+  ritualDoorCloseTrigger: Close
+  ritualDoorIsOpenBool: IsOpen
   interactPrompt: {fileID: 639700116}
   interactPromptText: {fileID: 639700118}
   flowerOfferingPanel: {fileID: 279034727}
@@ -6525,6 +6532,7 @@ MonoBehaviour:
   secondaryInteractionsRequired: 1
   secondaryMinCooldownSeconds: 3
   secondaryMaxCooldownSeconds: 5
+  secondaryRevealDelaySeconds: 5
   minFlowersRequired: 5
   maxFlowersRequired: 10
   shrineMinCooldownSeconds: 5
@@ -11470,7 +11478,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1985071450408465094, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 2.2781475
+      value: -5.38
       objectReference: {fileID: 0}
     - target: {fileID: 1985071450408465094, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
       propertyPath: m_LocalPosition.y
@@ -11512,10 +11520,6 @@ PrefabInstance:
       propertyPath: sceneViewId
       value: 1
       objectReference: {fileID: 0}
-    - target: {fileID: 2707945285555273108, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
-      propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
     - target: {fileID: 4514379010366019884, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
       propertyPath: respawnPlatform
       value: 
@@ -11523,10 +11527,6 @@ PrefabInstance:
     - target: {fileID: 4879892127143676765, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
       propertyPath: m_Name
       value: PlayerCapsule
-      objectReference: {fileID: 0}
-    - target: {fileID: 4879892127143676765, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
-      propertyPath: m_IsActive
-      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
