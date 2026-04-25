@@ -35,7 +35,7 @@ public class ShieldSystem : MonoBehaviourPun
             return;
         }
 
-        bool wasPressed = Keyboard.current != null && Keyboard.current.bKey.wasPressedThisFrame;
+        bool wasPressed = Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame;
         if (!wasPressed)
         {
             return;
