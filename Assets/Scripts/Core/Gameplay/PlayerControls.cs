@@ -12,7 +12,7 @@ public enum PlayerRole
     Ghost
 }
 
-public class PlayerControls : MonoBehaviourPunCallbacks
+public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 {
     public const string FlowerCountRoomPropertyKey = "FlowerCount";
     public const int MaxSoulCount = 15;
@@ -22,12 +22,6 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     [SerializeField]
     GameObject camObject;
 
-    [SerializeField]
-    Material[] materials;
-
-    [SerializeField]
-    Mesh[] meshes;
-
     [Header("Character Visuals")]
     [SerializeField]
     private GameObject priestVisualRoot;
@@ -36,13 +30,32 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     private GameObject ghostVisualRoot;
 
     [SerializeField]
+    private bool autoFindRoleVisualRoots = true;
+
+    [Header("Animation")]
+    [SerializeField]
+    private string animatorSpeedParameter = "Speed";
+
+    [SerializeField]
+    private float animationSmoothing = 12f;
+
+    [SerializeField]
+    private float idleSpeedThreshold = 0.05f;
+
+    [SerializeField]
+    private float remoteAnimationSmoothing = 18f;
+
+    [SerializeField]
+    private string animatorAttackTriggerParameter = "Attack";
+
+    [SerializeField]
     private Animator priestAnimator;
 
     [SerializeField]
-    private string priestSpeedParameter = "Speed";
+    private Animator ghostAnimator;
 
     [SerializeField]
-    private float priestAnimationDampTime = 0.1f;
+    private bool autoFindRoleAnimators = true;
 
     public Camera playerCam;
 
@@ -164,9 +177,12 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     private int shotsFiredInCurrentBurst;
     private float burstCooldownEndTime;
     private Transform projectilePoolRoot;
-    private MeshRenderer rootMeshRenderer;
-    private MeshFilter rootMeshFilter;
-    private int priestSpeedParameterHash;
+    private int animatorSpeedHash;
+    private int animatorAttackTriggerHash;
+    private float targetAnimationSpeed;
+    private float networkedAnimationSpeed;
+    private float smoothedAnimationSpeed;
+    private Vector3 previousPosition;
     private readonly Queue<PooledProjectile> availableProjectiles = new Queue<PooledProjectile>();
     private readonly List<PooledProjectile> pooledProjectiles = new List<PooledProjectile>();
 
@@ -177,14 +193,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
     private void Awake()
     {
-        rootMeshRenderer = GetComponent<MeshRenderer>();
-        rootMeshFilter = GetComponent<MeshFilter>();
-        priestSpeedParameterHash = Animator.StringToHash(priestSpeedParameter);
+        ResolveRoleVisualRoots();
+        ResolveRoleAnimators();
 
-        if (priestAnimator == null && priestVisualRoot != null)
-        {
-            priestAnimator = priestVisualRoot.GetComponentInChildren<Animator>(true);
-        }
+        animatorSpeedHash = Animator.StringToHash(animatorSpeedParameter);
+        animatorAttackTriggerHash = Animator.StringToHash(animatorAttackTriggerParameter);
 
         inputActions = new InputSystem_Actions();
         inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
@@ -226,6 +239,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        previousPosition = transform.position;
         EnsureProjectilePool();
         ApplyRoleVisuals();
 
@@ -268,13 +282,110 @@ public class PlayerControls : MonoBehaviourPunCallbacks
 
             ProcessMovement();
             ProcessTurn();
-            UpdateLocalPriestAnimation();
         }
+
+        UpdateAnimationSpeed();
 
         if (TestConnectionText.TestUI != null && photonView.Owner != null)
         {
             TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayOwner(photonView.Owner.ToStringFull());
         }
+    }
+
+    private void UpdateAnimationSpeed()
+    {
+        Animator activeAnimator = GetActiveRoleAnimator();
+        if (activeAnimator == null)
+        {
+            return;
+        }
+
+        float normalizedSpeed;
+
+        if (photonView.IsMine)
+        {
+            if (isDead || isImmobilized)
+            {
+                normalizedSpeed = 0f;
+            }
+            else
+            {
+                normalizedSpeed = Mathf.Clamp01(moveInput.magnitude);
+            }
+        }
+        else
+        {
+            normalizedSpeed = Mathf.Clamp01(networkedAnimationSpeed);
+        }
+
+        if (normalizedSpeed < idleSpeedThreshold)
+        {
+            normalizedSpeed = 0f;
+        }
+
+        targetAnimationSpeed = normalizedSpeed;
+
+        float smoothing = photonView.IsMine ? animationSmoothing : remoteAnimationSmoothing;
+
+        smoothedAnimationSpeed = Mathf.MoveTowards(
+            smoothedAnimationSpeed,
+            targetAnimationSpeed,
+            Mathf.Max(0.01f, smoothing) * Time.deltaTime);
+
+        activeAnimator.SetFloat(animatorSpeedHash, smoothedAnimationSpeed);
+        previousPosition = transform.position;
+    }
+
+    private Animator GetActiveRoleAnimator()
+    {
+        if (!HasAssignedRole)
+        {
+            return null;
+        }
+
+        if (IsPriest)
+        {
+            return priestAnimator;
+        }
+
+        if (IsGhost)
+        {
+            return ghostAnimator;
+        }
+
+        return null;
+    }
+
+    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (stream.IsWriting)
+        {
+            stream.SendNext(targetAnimationSpeed);
+            return;
+        }
+
+        if (stream.Count > 0)
+        {
+            networkedAnimationSpeed = (float)stream.ReceiveNext();
+        }
+    }
+
+    private void PlayAttackAnimation()
+    {
+        Animator activeAnimator = GetActiveRoleAnimator();
+        if (activeAnimator == null || animatorAttackTriggerHash == 0)
+        {
+            return;
+        }
+
+        activeAnimator.ResetTrigger(animatorAttackTriggerHash);
+        activeAnimator.SetTrigger(animatorAttackTriggerHash);
+    }
+
+    [PunRPC]
+    private void RPC_PlayAttackAnimation()
+    {
+        PlayAttackAnimation();
     }
 
     private void HandleSoulDropInput()
@@ -543,24 +654,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks
     [PunRPC]
     public void SetCharacterMat(int matIndex)
     {
-        if (rootMeshRenderer != null && matIndex >= 0 && matIndex < materials.Length)
-        {
-            rootMeshRenderer.material = materials[matIndex];
-            print("MatCall: " + PhotonNetwork.CurrentRoom.PlayerCount);
-        }
-        else if (rootMeshRenderer == null)
-        {
-            Debug.Log("No MeshRenderer found on player root. Skipping material swap.");
-        }
-        else
-        {
-            Debug.LogWarning($"Material index {matIndex} out of bounds (0-{materials.Length - 1})");
-        }
-
-        if (photonView.IsMine)
-        {
-            photonView.RPC("SetCharacterMat", RpcTarget.OthersBuffered, matIndex);
-        }
+        Debug.Log("SetCharacterMat is deprecated. Player visuals now come from role model child objects.");
     }
 
     [PunRPC]
@@ -575,40 +669,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         string localPlayerName = PhotonNetwork.LocalPlayer?.NickName ?? "Unknown";
         Debug.Log($"[RPC] AssignPlayerRole received on client '{localPlayerName}' for player '{photonView.Owner.NickName}': {playerRole} (IsMine: {photonView.IsMine}, ViewID: {photonView.ViewID})");
 
-        if (rootMeshRenderer != null && role < materials.Length)
-        {
-            rootMeshRenderer.material = materials[role];
-            Debug.Log($"  → Applied material {role} for role {playerRole}");
-
-            if (rootMeshFilter != null && role < meshes.Length && meshes[role] != null)
-            {
-                rootMeshFilter.mesh = meshes[role];
-                Debug.Log($"  → Applied mesh {role} for role {playerRole}");
-            }
-            else if (rootMeshFilter == null)
-            {
-                Debug.Log("No MeshFilter found on player root. Skipping mesh swap.");
-            }
-            else if (role >= meshes.Length)
-            {
-                Debug.LogWarning($"  → Role {role} exceeds meshes array length {meshes.Length}");
-            }
-            else
-            {
-                Debug.LogWarning($"  → Mesh at index {role} is null");
-            }
-        }
-        else if (rootMeshRenderer == null)
-        {
-            Debug.Log("No MeshRenderer found on player root. Skipping material swap.");
-        }
-        else
-        {
-            Debug.LogWarning($"  → Role {role} exceeds materials array length {materials.Length}");
-        }
-
+        ResolveRoleVisualRoots();
         ApplyRoleVisuals();
-        UpdateLocalPriestAnimation(true);
 
         ApplyRoleLayer();
 
@@ -788,6 +850,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks
             }
         }
 
+        PlayAttackAnimation();
+        photonView.RPC(nameof(RPC_PlayAttackAnimation), RpcTarget.All);
         photonView.RPC(nameof(RPC_SpawnProjectileVisual), RpcTarget.All, startPosition, targetPosition, projectileVisualSpeed);
         nextFireTime = Time.time + Mathf.Max(0.05f, fireCooldownSeconds);
 
@@ -1163,7 +1227,6 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         moveInput = Vector2.zero;
         lookInput = Vector2.zero;
         interactPressed = false;
-        UpdateLocalPriestAnimation(true);
     }
 
     private void ApplyRoleVisuals()
@@ -1177,33 +1240,105 @@ public class PlayerControls : MonoBehaviourPunCallbacks
         {
             ghostVisualRoot.SetActive(IsGhost);
         }
+    }
+
+    private void ResolveRoleVisualRoots()
+    {
+        if (!autoFindRoleVisualRoots)
+        {
+            return;
+        }
+
+        if (priestVisualRoot == null)
+        {
+            priestVisualRoot = FindChildByNames("PriestModel", "Priest", "PriestVisual", "PriestRoot");
+        }
+
+        if (ghostVisualRoot == null)
+        {
+            ghostVisualRoot = FindChildByNames("GhostModel", "Ghost", "GhostVisual", "GhostRoot");
+        }
+    }
+
+    private void ResolveRoleAnimators()
+    {
+        if (!autoFindRoleAnimators)
+        {
+            return;
+        }
 
         if (priestAnimator == null && priestVisualRoot != null)
         {
             priestAnimator = priestVisualRoot.GetComponentInChildren<Animator>(true);
         }
+
+        if (ghostAnimator == null && ghostVisualRoot != null)
+        {
+            ghostAnimator = ghostVisualRoot.GetComponentInChildren<Animator>(true);
+        }
+
+        if (priestAnimator == null)
+        {
+            priestAnimator = GetAnimatorInChildByNames("PriestModel", "Priest", "PriestVisual", "PriestRoot");
+        }
+
+        if (ghostAnimator == null)
+        {
+            ghostAnimator = GetAnimatorInChildByNames("GhostModel", "Ghost", "GhostVisual", "GhostRoot");
+        }
+
+        if (priestAnimator == null && ghostAnimator == null)
+        {
+            Debug.LogWarning("PlayerControls could not find role Animators. Assign priestAnimator and ghostAnimator in the Inspector.");
+        }
     }
 
-    private void UpdateLocalPriestAnimation(bool instant = false)
+    private Animator GetAnimatorInChildByNames(params string[] names)
     {
-        if (!photonView.IsMine || priestAnimator == null)
+        Transform[] allChildren = GetComponentsInChildren<Transform>(true);
+
+        for (int i = 0; i < allChildren.Length; i++)
         {
-            return;
+            Transform child = allChildren[i];
+            if (child == null || child == transform)
+            {
+                continue;
+            }
+
+            for (int j = 0; j < names.Length; j++)
+            {
+                if (string.Equals(child.name, names[j], StringComparison.OrdinalIgnoreCase))
+                {
+                    return child.GetComponentInChildren<Animator>(true);
+                }
+            }
         }
 
-        float speed = 0f;
-        if (HasAssignedRole && IsPriest && !isDead && !isImmobilized)
+        return null;
+    }
+
+    private GameObject FindChildByNames(params string[] names)
+    {
+        Transform[] allChildren = GetComponentsInChildren<Transform>(true);
+
+        for (int i = 0; i < allChildren.Length; i++)
         {
-            speed = Mathf.Clamp01(moveInput.magnitude);
+            Transform child = allChildren[i];
+            if (child == null || child == transform)
+            {
+                continue;
+            }
+
+            for (int j = 0; j < names.Length; j++)
+            {
+                if (string.Equals(child.name, names[j], StringComparison.OrdinalIgnoreCase))
+                {
+                    return child.gameObject;
+                }
+            }
         }
 
-        if (instant)
-        {
-            priestAnimator.SetFloat(priestSpeedParameterHash, speed);
-            return;
-        }
-
-        priestAnimator.SetFloat(priestSpeedParameterHash, speed, Mathf.Max(0f, priestAnimationDampTime), Time.deltaTime);
+        return null;
     }
 
     private void StartSpectateFollow()

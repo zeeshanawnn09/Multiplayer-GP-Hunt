@@ -107,17 +107,8 @@ public class RoomController : MonoBehaviourPunCallbacks
             
             // Each client instantiates their own player - this automatically sets photonView.IsMine = true
             GameObject newCharacter = PhotonNetwork.Instantiate(playerCharacter.name, spawnPos, Quaternion.identity);
-            
-            // Get player's position in room (1-based, so subtract 1 for 0-based index)
-            int playerIndex = GetPlayerIndex(PhotonNetwork.LocalPlayer);
-            
-            PlayerControls pc = newCharacter.GetComponent<PlayerControls>();
-            if (pc != null)
-            {
-                pc.SetCharacterMat(playerIndex);
-            }
 
-            Debug.Log($"Spawned local player for {PhotonNetwork.LocalPlayer.NickName}. IsMine: {newCharacter.GetComponent<PhotonView>().IsMine}, Index: {playerIndex}, ViewID: {newCharacter.GetComponent<PhotonView>().ViewID}");
+            Debug.Log($"Spawned local player for {PhotonNetwork.LocalPlayer.NickName}. IsMine: {newCharacter.GetComponent<PhotonView>().IsMine}, ViewID: {newCharacter.GetComponent<PhotonView>().ViewID}");
         }
         else
         {
@@ -160,25 +151,6 @@ public class RoomController : MonoBehaviourPunCallbacks
         return spawnSurfacePadding;
     }
     
-    // Get the index of a player in the room (0-based)
-    private int GetPlayerIndex(Player player)
-    {
-        Player[] players = PhotonNetwork.PlayerList;
-        Debug.Log($"GetPlayerIndex for {player.NickName}. Total players: {players.Length}");
-        
-        for (int i = 0; i < players.Length; i++)
-        {
-            Debug.Log($"  Player {i}: {players[i].NickName} (ActorID: {players[i].ActorNumber})");
-            if (players[i] == player)
-            {
-                Debug.Log($"  -> Found at index {i}");
-                return i;
-            }
-        }
-        Debug.LogWarning($"Player {player.NickName} not found in player list! Returning 0");
-        return 0;
-    }
-
     //Randomly assigns roles to all players in the room
     void AssignRolesToAllPlayers()
     {
