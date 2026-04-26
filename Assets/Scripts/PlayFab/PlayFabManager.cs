@@ -11,6 +11,9 @@ public class PlayFabManager : MonoBehaviour
     public TMP_InputField passwordInput;
     public TMP_InputField usernameInput;
 
+    [Header("Scenes")]
+    [SerializeField] private string lobbySceneName = "LobbyScene";
+
     void Start()
     {
     }
@@ -37,7 +40,7 @@ public class PlayFabManager : MonoBehaviour
     void OnRegisterSuccess(RegisterPlayFabUserResult result)
     {
         Debug.Log($"Registration successful! Username:{result.Username}");
-        SceneManager.LoadScene("LobbyScene");
+        LoadLobbyScene();
     }
 
     void OnRegisterFailure(PlayFabError error)
@@ -61,7 +64,7 @@ public class PlayFabManager : MonoBehaviour
     void OnLoginSuccess(LoginResult result)
     {
         Debug.Log($"Login successful! User ID: {result.PlayFabId}");
-        SceneManager.LoadScene("LobbyScene");
+        LoadLobbyScene();
     }
 
     void OnLoginFailure(PlayFabError error)
@@ -89,5 +92,23 @@ public class PlayFabManager : MonoBehaviour
     void OnPasswordResetFailure(PlayFabError error)
     {
         Debug.LogError("Failed to send password reset email: " + error.ErrorMessage);
+    }
+
+// ----------------------------------------------------Password reset method-------------------------------------------------------------
+    public void GuestLogin()
+    {
+        Debug.Log("Guest button pressed. Loading lobby scene directly.");
+        LoadLobbyScene();
+    }
+
+    private void LoadLobbyScene()
+    {
+        if (string.IsNullOrWhiteSpace(lobbySceneName))
+        {
+            Debug.LogError("Lobby scene name is empty on PlayFabManager.");
+            return;
+        }
+
+        UnityEngine.SceneManagement.SceneManager.LoadScene(lobbySceneName);
     }
 }

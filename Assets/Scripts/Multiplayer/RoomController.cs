@@ -23,6 +23,12 @@ public class RoomController : MonoBehaviourPunCallbacks
 
     [Header("Spawn Settings")]
     [SerializeField]
+    private Transform[] priestSpawnPoints;
+
+    [SerializeField]
+    private Transform ghostSpawnPoint;
+
+    [SerializeField]
     private float spawnRange = 5f;
 
     [SerializeField]
@@ -43,6 +49,8 @@ public class RoomController : MonoBehaviourPunCallbacks
     void Start()
     {
         PhotonNetwork.AutomaticallySyncScene = true;
+
+        CleanupInvalidScenePlayers();
         
         // Each client spawns their own player
         SpawnLocalPlayer();
@@ -51,6 +59,34 @@ public class RoomController : MonoBehaviourPunCallbacks
         if (PhotonNetwork.IsMasterClient && PhotonNetwork.CurrentRoom.PlayerCount >= REQUIRED_PLAYERS)
         {
             StartCoroutine(AssignRolesWhenReady());
+        }
+    }
+
+    private void CleanupInvalidScenePlayers()
+    {
+        PlayerControls[] playerControls = FindObjectsByType<PlayerControls>(FindObjectsSortMode.None);
+        for (int i = 0; i < playerControls.Length; i++)
+        {
+            PlayerControls playerControl = playerControls[i];
+            if (playerControl == null)
+            {
+                continue;
+            }
+
+            PhotonView view = playerControl.GetComponent<PhotonView>();
+            if (view == null)
+            {
+                Debug.LogWarning($"Destroying scene PlayerControls '{playerControl.name}' because PhotonView is missing.");
+                Destroy(playerControl.gameObject);
+                continue;
+            }
+
+            bool hasInvalidNetworkIdentity = view.ViewID == 0 || view.Owner == null;
+            if (hasInvalidNetworkIdentity)
+            {
+                Debug.LogWarning($"Destroying scene PlayerControls '{playerControl.name}' because it is not a valid Photon-instantiated player (ViewID={view.ViewID}, Owner={(view.Owner != null ? view.Owner.NickName : "null")}).");
+                Destroy(playerControl.gameObject);
+            }
         }
     }
 
@@ -103,7 +139,7 @@ public class RoomController : MonoBehaviourPunCallbacks
         
         if (PlayerControls.localPlayerInstance == null)
         {
-            Vector3 spawnPos = GetGroundedSpawnPosition();
+            Vector3 spawnPos = GetInitialSpawnPosition();
             
             // Each client instantiates their own player - this automatically sets photonView.IsMine = true
             GameObject newCharacter = PhotonNetwork.Instantiate(playerCharacter.name, spawnPos, Quaternion.identity);
@@ -114,6 +150,46 @@ public class RoomController : MonoBehaviourPunCallbacks
         {
             Debug.Log($"Skipping spawn - localPlayerInstance already exists");
         }
+    }
+
+    private Vector3 GetInitialSpawnPosition()
+    {
+        List<Transform> configuredPoints = new List<Transform>();
+
+        if (priestSpawnPoints != null)
+        {
+            for (int i = 0; i < priestSpawnPoints.Length; i++)
+            {
+                if (priestSpawnPoints[i] != null)
+                {
+                    configuredPoints.Add(priestSpawnPoints[i]);
+                }
+            }
+        }
+
+        if (ghostSpawnPoint != null)
+        {
+            configuredPoints.Add(ghostSpawnPoint);
+        }
+
+        if (configuredPoints.Count == 0)
+        {
+            return GetGroundedSpawnPosition();
+        }
+
+        int actorNumber = PhotonNetwork.LocalPlayer != null ? PhotonNetwork.LocalPlayer.ActorNumber : 1;
+        int spawnIndex = Mathf.Abs(actorNumber - 1) % configuredPoints.Count;
+        return GetConfiguredSpawnPosition(configuredPoints[spawnIndex]);
+    }
+
+    private Vector3 GetConfiguredSpawnPosition(Transform spawnPoint)
+    {
+        if (spawnPoint == null)
+        {
+            return GetGroundedSpawnPosition();
+        }
+
+        return spawnPoint.position + Vector3.up * GetSpawnYOffset();
     }
 
     private Vector3 GetGroundedSpawnPosition()
@@ -201,6 +277,7 @@ public class RoomController : MonoBehaviourPunCallbacks
 
         // Assign roles to players
         int assignedCount = 0;
+        int priestSpawnIndex = 0;
         for (int i = 0; i < players.Length && i < roles.Count; i++)
         {
             Player player = players[i];
@@ -214,6 +291,14 @@ public class RoomController : MonoBehaviourPunCallbacks
                 if (pControl.photonView != null && pControl.photonView.OwnerActorNr == player.ActorNumber)
                 {
                     pControl.photonView.RPC("AssignPlayerRole", RpcTarget.AllBuffered, (int)role);
+
+                    Vector3 spawnPosition = GetRoleSpawnPosition(role, priestSpawnIndex);
+                    if (role == PlayerRole.Priest)
+                    {
+                        priestSpawnIndex++;
+                    }
+
+                    pControl.photonView.RPC(nameof(PlayerControls.RPC_SetSpawnPosition), RpcTarget.AllBuffered, spawnPosition);
                     Debug.Log($"✓ SUCCESS: Assigned role {role} to player {player.NickName} (ViewID: {pControl.photonView.ViewID})");
                     assignedCount++;
                     found = true;
@@ -233,6 +318,34 @@ public class RoomController : MonoBehaviourPunCallbacks
         {
             Debug.LogWarning("Role assignment was not completed for every player. The master will be able to retry on the next join event.");
         }
+    }
+
+    private Vector3 GetRoleSpawnPosition(PlayerRole role, int priestIndex)
+    {
+        if (role == PlayerRole.Ghost && ghostSpawnPoint != null)
+        {
+            return GetConfiguredSpawnPosition(ghostSpawnPoint);
+        }
+
+        if (role == PlayerRole.Priest && priestSpawnPoints != null)
+        {
+            List<Transform> validPriestPoints = new List<Transform>();
+            for (int i = 0; i < priestSpawnPoints.Length; i++)
+            {
+                if (priestSpawnPoints[i] != null)
+                {
+                    validPriestPoints.Add(priestSpawnPoints[i]);
+                }
+            }
+
+            if (validPriestPoints.Count > 0)
+            {
+                int index = Mathf.Abs(priestIndex) % validPriestPoints.Count;
+                return GetConfiguredSpawnPosition(validPriestPoints[index]);
+            }
+        }
+
+        return GetGroundedSpawnPosition();
     }
 
     //Changes colour of connection text when initial player is spawned

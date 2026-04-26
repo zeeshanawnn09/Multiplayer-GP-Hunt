@@ -15,6 +15,9 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
     [SerializeField]
     private float interactionDistance = 3f;
 
+    [SerializeField]
+    private Transform[] respawnPoints;
+
     private PlayerControls _localPlayerInRange;
 
     private void Awake()
@@ -70,11 +73,11 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
 
         Debug.Log($"[PriestRespawnPoint] Requesting respawn for dead priest with ViewID {deadPlayerViewId}");
 
-        photonView.RPC(nameof(RPC_RequestRespawn), RpcTarget.MasterClient, deadPlayerViewId, transform.position, _localPlayerInRange.photonView.OwnerActorNr);
+        photonView.RPC(nameof(RPC_RequestRespawn), RpcTarget.MasterClient, deadPlayerViewId, _localPlayerInRange.photonView.OwnerActorNr);
     }
 
     [PunRPC]
-    private void RPC_RequestRespawn(int deadPlayerViewId, Vector3 respawnPosition, int requestingActorNumber)
+    private void RPC_RequestRespawn(int deadPlayerViewId, int requestingActorNumber)
     {
         Debug.Log($"[PriestRespawnPoint.RPC_RequestRespawn] Called. IsMasterClient: {PhotonNetwork.IsMasterClient}, DeadPlayerViewID: {deadPlayerViewId}, RequestingActorNumber: {requestingActorNumber}");
 
@@ -117,6 +120,8 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
             return;
         }
 
+        Vector3 respawnPosition = GetRandomRespawnPosition();
+
         Debug.Log($"[PriestRespawnPoint.RPC_RequestRespawn] SUCCESS! Respawning priest {deadPriest.photonView.Owner?.NickName} at position {respawnPosition}");
 
         // Respawn the dead priest
@@ -138,6 +143,49 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
                 break;
             }
         }
+    }
+
+    private Vector3 GetRandomRespawnPosition()
+    {
+        if (respawnPoints == null || respawnPoints.Length == 0)
+        {
+            return transform.position;
+        }
+
+        int validPointCount = 0;
+        for (int i = 0; i < respawnPoints.Length; i++)
+        {
+            if (respawnPoints[i] != null)
+            {
+                validPointCount++;
+            }
+        }
+
+        if (validPointCount == 0)
+        {
+            return transform.position;
+        }
+
+        int randomValidIndex = Random.Range(0, validPointCount);
+        int currentValidIndex = 0;
+
+        for (int i = 0; i < respawnPoints.Length; i++)
+        {
+            Transform point = respawnPoints[i];
+            if (point == null)
+            {
+                continue;
+            }
+
+            if (currentValidIndex == randomValidIndex)
+            {
+                return point.position;
+            }
+
+            currentValidIndex++;
+        }
+
+        return transform.position;
     }
 
     private void OnTriggerEnter(Collider other)

@@ -73,6 +73,7 @@ MonoBehaviour:
   - RPC_SetDroppedSoulState
   - RPC_PlayBellRingAnimation
   - RPC_PlayAttackAnimation
+  - RPC_SetSpawnPosition
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

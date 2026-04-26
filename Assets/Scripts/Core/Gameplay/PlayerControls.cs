@@ -694,30 +694,50 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
         }
     }
 
+    [PunRPC]
+    public void RPC_SetSpawnPosition(Vector3 spawnPosition)
+    {
+        if (controller == null)
+        {
+            controller = GetComponent<CharacterController>();
+        }
+
+        if (controller != null)
+        {
+            bool wasEnabled = controller.enabled;
+            controller.enabled = false;
+            transform.position = spawnPosition;
+            controller.enabled = wasEnabled;
+        }
+        else
+        {
+            transform.position = spawnPosition;
+        }
+    }
+
     void FinishInvoke()
     {
-        Debug.Log($"FinishInvoke called. IsMine: {photonView.IsMine}, Owner: {photonView.Owner?.NickName}");
+        Debug.Log($"FinishInvoke called. IsMine: {photonView.IsMine}, Owner: {photonView.Owner?.NickName}, OwnerActorNr: {photonView.OwnerActorNr}, ViewID: {photonView.ViewID}");
 
         if (TestConnectionText.TestUI != null)
         {
             TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayView(photonView.IsMine);
         }
 
-        if (photonView.IsMine)
+        if (photonView.Owner == null)
+        {
+            Debug.LogWarning($"Skipping camera attachment because PhotonView owner is null on '{name}'. This often means a scene copy exists. Remove any Player prefab from the scene and only spawn via PhotonNetwork.Instantiate.");
+            return;
+        }
+
+        bool isLocalOwned = PhotonNetwork.LocalPlayer != null && photonView.OwnerActorNr == PhotonNetwork.LocalPlayer.ActorNumber;
+
+        if (isLocalOwned)
         {
             localPlayerInstance = this.gameObject;
             Debug.Log($"Set localPlayerInstance for player {photonView.Owner.NickName}");
 
-            GameObject mainCam = GameObject.FindWithTag("MainCamera");
-            if (mainCam != null)
-            {
-                AttachCamera(mainCam);
-                Debug.Log("Camera attached successfully");
-            }
-            else
-            {
-                Debug.LogWarning("MainCamera not found for player!");
-            }
+            StartCoroutine(AttachMainCameraWithRetry());
         }
         else
         {
@@ -725,8 +745,90 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
         }
     }
 
+    private System.Collections.IEnumerator AttachMainCameraWithRetry()
+    {
+        const float timeoutSeconds = 2f;
+        float elapsed = 0f;
+
+        while (elapsed < timeoutSeconds)
+        {
+            Camera resolvedCamera = ResolveAttachableCamera();
+            if (resolvedCamera != null)
+            {
+                AttachCamera(resolvedCamera.gameObject);
+                Debug.Log($"Camera attached successfully for local player '{photonView.Owner?.NickName}'.");
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        Camera fallbackCamera = CreateFallbackMainCamera();
+        if (fallbackCamera != null)
+        {
+            AttachCamera(fallbackCamera.gameObject);
+            Debug.LogWarning("No scene camera found for local player. Created runtime fallback camera and attached it.");
+            yield break;
+        }
+
+        Debug.LogWarning("MainCamera not found for local player after retry timeout and fallback creation failed.");
+    }
+
+    private Camera ResolveAttachableCamera()
+    {
+        if (playerCam != null)
+        {
+            return playerCam;
+        }
+
+        GameObject taggedCameraObject = GameObject.FindWithTag("MainCamera");
+        if (taggedCameraObject != null)
+        {
+            Camera taggedCamera = taggedCameraObject.GetComponent<Camera>();
+            if (taggedCamera == null)
+            {
+                taggedCamera = taggedCameraObject.GetComponentInChildren<Camera>(true);
+            }
+
+            if (taggedCamera != null)
+            {
+                return taggedCamera;
+            }
+        }
+
+        if (Camera.main != null)
+        {
+            return Camera.main;
+        }
+
+        Camera[] sceneCameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+        if (sceneCameras != null && sceneCameras.Length > 0)
+        {
+            return sceneCameras[0];
+        }
+
+        return null;
+    }
+
+    private Camera CreateFallbackMainCamera()
+    {
+        GameObject fallbackCameraObject = new GameObject("RuntimeMainCamera");
+        fallbackCameraObject.tag = "MainCamera";
+
+        Camera fallbackCamera = fallbackCameraObject.AddComponent<Camera>();
+        fallbackCameraObject.AddComponent<AudioListener>();
+        return fallbackCamera;
+    }
+
     public void AttachCamera(GameObject cam)
     {
+        if (camObject == null)
+        {
+            Debug.LogWarning($"Cannot attach camera for '{name}' because camObject is not assigned on PlayerControls.");
+            return;
+        }
+
         cam.transform.SetParent(camObject.transform);
         cam.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
         playerCam = cam.GetComponent<Camera>();

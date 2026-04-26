@@ -5958,6 +5958,7 @@ MonoBehaviour:
   respawnPrompt: {fileID: 1302891315}
   respawnPromptText: {fileID: 1744681022}
   interactionDistance: 3
+  respawnPoints: []
 --- !u!114 &1400965201
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9980,6 +9981,8 @@ MonoBehaviour:
   totalLamps: 15
   lampsNeededToOpenDoor: 10
   progressBar: {fileID: 111435019}
+  lampUnlitBackgroundImage: {fileID: 0}
+  lampLitFillImage: {fileID: 0}
   ritualReadyPrompt: {fileID: 1051600729}
   ritualReadyPromptDurationSeconds: 10
 --- !u!4 &1895040376
