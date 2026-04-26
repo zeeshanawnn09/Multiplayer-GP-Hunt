@@ -14,6 +14,8 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
     [SerializeField] private int totalLamps = 15;
     [SerializeField] private int lampsNeededToOpenDoor = 10;
     [SerializeField] private Slider progressBar;
+    [SerializeField] private Image lampUnlitBackgroundImage;
+    [SerializeField] private Image lampLitFillImage;
     [SerializeField] private GameObject ritualReadyPrompt;
     [SerializeField] private float ritualReadyPromptDurationSeconds = 10f;
 
@@ -112,12 +114,33 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
     {
         if (progressBar == null)
         {
+            ConfigureLampImageProgress();
             return;
         }
 
         progressBar.minValue = 0f;
         progressBar.maxValue = totalLamps;
         progressBar.wholeNumbers = true;
+
+        ConfigureLampImageProgress();
+    }
+
+    private void ConfigureLampImageProgress()
+    {
+        if (lampUnlitBackgroundImage != null)
+        {
+            lampUnlitBackgroundImage.enabled = true;
+        }
+
+        if (lampLitFillImage == null)
+        {
+            return;
+        }
+
+        lampLitFillImage.type = Image.Type.Filled;
+        lampLitFillImage.fillMethod = Image.FillMethod.Horizontal;
+        lampLitFillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
+        lampLitFillImage.fillAmount = 0f;
     }
 
     private int GetRoomLitLampCount()
@@ -166,6 +189,11 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
             progressBar.value = _currentLitLamps;
         }
 
+        if (lampLitFillImage != null)
+        {
+            lampLitFillImage.fillAmount = GetNormalizedProgress();
+        }
+
         if (!_ritualDoorLogged && _currentLitLamps >= lampsNeededToOpenDoor)
         {
             _ritualDoorLogged = true;
@@ -177,6 +205,12 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
         {
             ShowRitualReadyPromptTemporarily();
         }
+    }
+
+    private float GetNormalizedProgress()
+    {
+        int safeTotalLamps = Mathf.Max(1, totalLamps);
+        return Mathf.Clamp01((float)_currentLitLamps / safeTotalLamps);
     }
 
     private void ShowRitualReadyPromptTemporarily()

@@ -12,6 +12,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
 {
     public TMPro.TMP_Text statusText;
     public TMPro.TMP_Text regionText;
+    public TMPro.TMP_Text createdRoomText;
     public TMPro.TMP_InputField iFNewRoom;
     public ScrollView scrollView;
     public GameObject roomPanelClass;
@@ -19,11 +20,14 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     public GameObject playerCharacter;
     public UnityEngine.UI.Button connectButton;
     public TMPro.TMP_Text playerCountText;
+    [Header("Room List Style")]
+    [SerializeField] private TMP_FontAsset roomListFont;
 
     private string gameVer = "0.0";
     private List<RoomInfo>roomsInfo = new List<RoomInfo>();
     private List<GameObject>roomPanels = new List<GameObject>();
     private const int REQUIRED_PLAYERS = 4;
+    private bool didCreateRoom;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -85,6 +89,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
             roomOptions.IsVisible = true;
             roomOptions.MaxPlayers = (byte)4;
 
+            didCreateRoom = false;
             PhotonNetwork.JoinOrCreateRoom(inputName, roomOptions, TypedLobby.Default);
         }
         
@@ -106,8 +111,14 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
             }
             
 
-            roomPanels[i].GetComponentInChildren<TMP_Text>().text = 
-                roomsInfo[i].Name + ": " + roomsInfo[i].PlayerCount + "/" + roomsInfo[i].MaxPlayers;
+            TMP_Text roomEntryText = roomPanels[i].GetComponentInChildren<TMP_Text>();
+            if (roomListFont != null)
+            {
+                roomEntryText.font = roomListFont;
+            }
+            roomEntryText.enableAutoSizing = false;
+            roomEntryText.fontSize = 30f;
+            roomEntryText.text = roomsInfo[i].Name + ": " + roomsInfo[i].PlayerCount + "/" + roomsInfo[i].MaxPlayers;
             roomPanels[i].GetComponent<RoomPanel>().SetRoomName(roomsInfo[i].Name);
         }
     }
@@ -140,11 +151,27 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     //On joining a room, show connect button and update its state
     public override void OnJoinedRoom()
     {
+        if (createdRoomText != null && !didCreateRoom)
+        {
+            createdRoomText.text = string.Empty;
+        }
+
         if (connectButton != null)
         {
             connectButton.gameObject.SetActive(true);
         }
         UpdateConnectButton();
+    }
+
+    //Called only on the client that successfully created the room
+    public override void OnCreatedRoom()
+    {
+        didCreateRoom = true;
+
+        if (createdRoomText != null && PhotonNetwork.CurrentRoom != null)
+        {
+            createdRoomText.text = "Room Name: " + PhotonNetwork.CurrentRoom.Name;
+        }
     }
 
     //Update button state when a player joins
@@ -196,7 +223,7 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     {
         if (PhotonNetwork.IsMasterClient && PhotonNetwork.CurrentRoom.PlayerCount >= REQUIRED_PLAYERS)
         {
-            PhotonNetwork.LoadLevel("Level_1");
+            PhotonNetwork.LoadLevel("Blockout");
         }
     }
 
