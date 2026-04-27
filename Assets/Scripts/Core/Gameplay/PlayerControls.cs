@@ -89,7 +89,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
     [Header("Ghost Vines")]
     [SerializeField]
-    private int initialGhostVineCount = 6;
+    private int initialGhostVineCount = 3;
 
     [SerializeField]
     private string ghostVinePrefabName = "Trap_Wines";
@@ -102,7 +102,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
     [Header("Ghost Blood Pool")]
     [SerializeField]
-    private int initialGhostBloodPoolCount = 6;
+    private int initialGhostBloodPoolCount = 3;
 
     [SerializeField]
     private string ghostBloodPoolPrefabName = "BloodPool";
@@ -282,6 +282,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
             ProcessMovement();
             ProcessTurn();
+            UpdateBurstCooldownUI();
         }
 
         UpdateAnimationSpeed();
@@ -289,6 +290,31 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
         if (TestConnectionText.TestUI != null && photonView.Owner != null)
         {
             TestConnectionText.TestUI.GetComponent<TestConnectionText>().DisplayOwner(photonView.Owner.ToStringFull());
+        }
+    }
+
+    private void UpdateBurstCooldownUI()
+    {
+        if (!photonView.IsMine || TestConnectionText.TestUI == null)
+        {
+            return;
+        }
+
+        TestConnectionText connectionText = TestConnectionText.TestUI.GetComponent<TestConnectionText>();
+        if (connectionText == null)
+        {
+            return;
+        }
+
+        float remaining = Mathf.Max(0f, burstCooldownEndTime - Time.time);
+        if (remaining > 0f)
+        {
+            int display = Mathf.CeilToInt(remaining);
+            connectionText.DisplayBurstCooldown(display);
+        }
+        else
+        {
+            connectionText.ClearBurstCooldown();
         }
     }
 
@@ -477,6 +503,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
         ghostVineCount = Mathf.Max(0, ghostVineCount - 1);
         Debug.Log($"Ghost vine placed. Remaining vines: {ghostVineCount}");
+        RefreshFlowerCountUI();
     }
 
     private void HandleBloodPoolDropInput()
@@ -526,6 +553,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
         ghostBloodPoolCount = Mathf.Max(0, ghostBloodPoolCount - 1);
         Debug.Log($"Ghost blood pool placed. Remaining pools: {ghostBloodPoolCount}");
+        RefreshFlowerCountUI();
     }
 
     private Vector3 GetGhostPlacementPosition(float rayDistance, float verticalOffset)
@@ -539,10 +567,28 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
             return fallbackPosition;
         }
 
-        Ray aimRay = new Ray(aimCamera.transform.position, aimCamera.transform.forward);
-        if (Physics.Raycast(aimRay, out RaycastHit hit, rayDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+        Ray aimRay = aimCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        RaycastHit[] hits = Physics.RaycastAll(aimRay, rayDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        if (hits != null && hits.Length > 0)
         {
-            return hit.point + Vector3.up * verticalOffset;
+            Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                RaycastHit hit = hits[i];
+                if (hit.collider == null)
+                {
+                    continue;
+                }
+
+                PlayerControls hitPlayer = hit.collider.GetComponentInParent<PlayerControls>();
+                if (hitPlayer != null && hitPlayer == this)
+                {
+                    continue;
+                }
+
+                return hit.point + hit.normal * verticalOffset;
+            }
         }
 
         Vector3 projectedPosition = aimCamera.transform.position + aimCamera.transform.forward * 2f;
@@ -850,8 +896,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
         Ray ray = new Ray(aimCamera.transform.position, aimCamera.transform.forward);
         Debug.Log($"[TryPickupInteractables] Raycasting from camera. Position: {ray.origin}, Direction: {ray.direction}");
-        
-        if (Physics.Raycast(ray, out RaycastHit ashPotHit, ashPotPickupRayDistance))
+
+        if (TryGetPickupHit(ray, ashPotPickupRayDistance, out RaycastHit ashPotHit))
         {
             Debug.Log($"[TryPickupInteractables] Raycast hit: {ashPotHit.collider.gameObject.name} at distance {ashPotHit.distance:F2}m");
             AshPotPickup ashPotPickup = ashPotHit.collider.GetComponentInParent<AshPotPickup>();
@@ -861,17 +907,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
                 ashPotPickup.RequestPickup();
                 return;
             }
-            else
-            {
-                Debug.Log($"[TryPickupInteractables] Hit object {ashPotHit.collider.gameObject.name} but no AshPotPickup component");
-            }
-        }
-        else
-        {
-            Debug.Log($"[TryPickupInteractables] No raycast hit for ash pot within {ashPotPickupRayDistance}m");
+
+            Debug.Log($"[TryPickupInteractables] Hit object {ashPotHit.collider.gameObject.name} but no AshPotPickup component");
         }
 
-        if (IsGhost && Physics.Raycast(ray, out RaycastHit soulHit, soulPickupRayDistance))
+        if (IsGhost && TryGetPickupHit(ray, soulPickupRayDistance, out RaycastHit soulHit))
         {
             Debug.Log($"[TryPickupInteractables] Raycast hit soul: {soulHit.collider.gameObject.name}");
             SoulPickup soulPickup = soulHit.collider.GetComponentInParent<SoulPickup>();
@@ -883,16 +923,49 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
             }
         }
 
-        if (Physics.Raycast(ray, out RaycastHit hit, flowerPickupRayDistance))
+        if (TryGetPickupHit(ray, flowerPickupRayDistance, out RaycastHit flowerHit))
         {
-            Debug.Log($"[TryPickupInteractables] Raycast hit flower: {hit.collider.gameObject.name}");
-            FlowerPickup flowerPickup = hit.collider.GetComponentInParent<FlowerPickup>();
+            Debug.Log($"[TryPickupInteractables] Raycast hit flower: {flowerHit.collider.gameObject.name}");
+            FlowerPickup flowerPickup = flowerHit.collider.GetComponentInParent<FlowerPickup>();
             if (flowerPickup != null)
             {
                 Debug.Log("[TryPickupInteractables] Found FlowerPickup component, requesting pickup");
                 flowerPickup.RequestPickup();
             }
         }
+    }
+
+    private bool TryGetPickupHit(Ray ray, float distance, out RaycastHit validHit)
+    {
+        RaycastHit[] hits = Physics.RaycastAll(ray, distance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        if (hits == null || hits.Length == 0)
+        {
+            validHit = default;
+            return false;
+        }
+
+        Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            RaycastHit candidate = hits[i];
+            if (candidate.collider == null)
+            {
+                continue;
+            }
+
+            PlayerControls hitPlayer = candidate.collider.GetComponentInParent<PlayerControls>();
+            if (hitPlayer != null && hitPlayer == this)
+            {
+                continue;
+            }
+
+            validHit = candidate;
+            return true;
+        }
+
+        validHit = default;
+        return false;
     }
 
     private void TryFireProjectile()
@@ -1153,16 +1226,22 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
         {
             connectionText.DisplayFlowerCount(flowerCount);
             connectionText.ClearSoulCount();
+            connectionText.ClearVineCount();
+            connectionText.ClearBloodPoolCount();
         }
         else if (IsGhost)
         {
             connectionText.DisplaySoulCount(soulCount, MaxSoulCount);
             connectionText.ClearFlowerCount();
+            connectionText.DisplayVineCount(ghostVineCount);
+            connectionText.DisplayBloodPoolCount(ghostBloodPoolCount);
         }
         else
         {
             connectionText.ClearFlowerCount();
             connectionText.ClearSoulCount();
+            connectionText.ClearVineCount();
+            connectionText.ClearBloodPoolCount();
         }
     }
 

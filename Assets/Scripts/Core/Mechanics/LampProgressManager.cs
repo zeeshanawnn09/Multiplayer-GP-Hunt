@@ -40,6 +40,7 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
     private void Start()
     {
         ValidateLampSetup();
+        SyncTotalLampCountFromScene();
         ConfigureProgressBar();
         SetRitualPromptVisible(false);
 
@@ -66,6 +67,18 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
         }
     }
 
+    private void SyncTotalLampCountFromScene()
+    {
+        LitLampBehavior[] lampsInScene = FindObjectsByType<LitLampBehavior>(FindObjectsSortMode.None);
+        if (lampsInScene.Length <= 0 || lampsInScene.Length == totalLamps)
+        {
+            return;
+        }
+
+        totalLamps = lampsInScene.Length;
+        Debug.Log($"LampProgressManager: totalLamps synced to scene lamp count ({totalLamps}).");
+    }
+
     public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
     {
         if (propertiesThatChanged.TryGetValue(LitLampCountKey, out object litLampCountObj) && litLampCountObj is int litLampCount)
@@ -86,16 +99,15 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
             return;
         }
 
-        int roomCount = GetRoomLitLampCount();
-        int delta = isLit ? 1 : -1;
-        int updatedCount = Mathf.Clamp(roomCount + delta, 0, totalLamps);
+        int updatedCount = GetLitLampCountFromScene();
 
-        if (updatedCount == roomCount)
+        if (updatedCount == GetRoomLitLampCount())
         {
             return;
         }
 
         SetRoomLitLampCount(updatedCount);
+        ApplyLitLampCount(updatedCount);
     }
 
     public void NotifyLampStateChangedLocalFallback(bool isLit)
@@ -156,6 +168,23 @@ public class LampProgressManager : MonoBehaviourPunCallbacks
         }
 
         return 0;
+    }
+
+    private int GetLitLampCountFromScene()
+    {
+        LitLampBehavior[] lampsInScene = FindObjectsByType<LitLampBehavior>(FindObjectsSortMode.None);
+        int litLampCount = 0;
+
+        for (int i = 0; i < lampsInScene.Length; i++)
+        {
+            LitLampBehavior lamp = lampsInScene[i];
+            if (lamp != null && lamp.IsLit)
+            {
+                litLampCount++;
+            }
+        }
+
+        return Mathf.Clamp(litLampCount, 0, totalLamps);
     }
 
     private void SetRoomLitLampCount(int litLampCount)

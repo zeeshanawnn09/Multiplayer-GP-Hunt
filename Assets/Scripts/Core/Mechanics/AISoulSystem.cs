@@ -337,7 +337,7 @@ public class AISoulSystem : MonoBehaviourPunCallbacks
             return false;
         }
 
-        float distance = Vector3.Distance(requestingPlayer.transform.position, soulPickup.transform.position);
+        float distance = Vector3.Distance(requestingPlayer.transform.position, soulPickup.GetPickupWorldPosition());
         return distance <= soulPickup.PickupDistance;
     }
 

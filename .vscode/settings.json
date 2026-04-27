@@ -66,5 +66,6 @@
     "explorer.fileNesting.patterns": {
         "*.sln": "*.csproj",
     },
-    "dotnet.defaultSolution": "Multiplayer-GP-Hunt.sln"
+    "dotnet.defaultSolution": "Multiplayer-GP-Hunt.sln",
+    "liveServer.settings.port": 5501
 }

@@ -213,7 +213,7 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
             return false;
         }
 
-        float distance = Vector3.Distance(requestingPlayer.transform.position, flowerPickup.transform.position);
+        float distance = Vector3.Distance(requestingPlayer.transform.position, flowerPickup.GetPickupWorldPosition());
         return distance <= flowerPickup.PickupDistance;
     }
 

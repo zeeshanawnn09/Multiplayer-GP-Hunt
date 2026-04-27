@@ -74,6 +74,7 @@ MonoBehaviour:
   - RPC_PlayBellRingAnimation
   - RPC_PlayAttackAnimation
   - RPC_SetSpawnPosition
+  - RPC_RequestExtinguishLamp
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

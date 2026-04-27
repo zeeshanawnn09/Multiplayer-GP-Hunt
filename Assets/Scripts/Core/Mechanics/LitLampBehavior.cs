@@ -149,7 +149,8 @@ public class LitLampBehavior : MonoBehaviour
 
         if (!PhotonNetwork.IsMasterClient)
         {
-            return false;
+            _photonView.RPC(nameof(RPC_RequestExtinguishLamp), RpcTarget.MasterClient);
+            return true;
         }
 
         _photonView.RPC(nameof(RPC_SetLampLitState), RpcTarget.AllBuffered, false);
@@ -165,6 +166,22 @@ public class LitLampBehavior : MonoBehaviour
         }
 
         return true;
+    }
+
+    [PunRPC]
+    private void RPC_RequestExtinguishLamp()
+    {
+        if (!PhotonNetwork.IsMasterClient || !GetCurrentLitState())
+        {
+            return;
+        }
+
+        _photonView.RPC(nameof(RPC_SetLampLitState), RpcTarget.AllBuffered, false);
+
+        if (LampProgressManager.Instance != null)
+        {
+            LampProgressManager.Instance.NotifyLampStateChangedByMaster(false);
+        }
     }
 
     private void OnDisable()

@@ -82,4 +82,21 @@ public class SoulPickup : MonoBehaviourPunCallbacks
             soulRenderer.enabled = false;
         }
     }
+
+    public Vector3 GetPickupWorldPosition()
+    {
+        Collider soulCollider = GetComponent<Collider>();
+        if (soulCollider != null)
+        {
+            return soulCollider.bounds.center;
+        }
+
+        Renderer soulRenderer = GetComponentInChildren<Renderer>(true);
+        if (soulRenderer != null)
+        {
+            return soulRenderer.bounds.center;
+        }
+
+        return transform.position;
+    }
 }

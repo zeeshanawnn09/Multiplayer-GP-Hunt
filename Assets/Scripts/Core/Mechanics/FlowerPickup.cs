@@ -53,4 +53,21 @@ public class FlowerPickup : MonoBehaviourPunCallbacks
             flowerRenderer.enabled = false;
         }
     }
+
+    public Vector3 GetPickupWorldPosition()
+    {
+        Collider flowerCollider = GetComponent<Collider>();
+        if (flowerCollider != null)
+        {
+            return flowerCollider.bounds.center;
+        }
+
+        Renderer flowerRenderer = GetComponentInChildren<Renderer>(true);
+        if (flowerRenderer != null)
+        {
+            return flowerRenderer.bounds.center;
+        }
+
+        return transform.position;
+    }
 }
