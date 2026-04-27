@@ -139,7 +139,7 @@ MonoBehaviour:
   ObservedComponentsFoldoutOpen: 1
   Group: 0
   prefixField: -1
-  Synchronization: 3
+  Synchronization: 1
   OwnershipTransfer: 0
   observableSearch: 2
   ObservedComponents:
@@ -185,10 +185,10 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 1.252101
-  m_Height: 2.504202
+  m_Radius: 2.4026272
+  m_Height: 4.8052545
   m_Direction: 1
-  m_Center: {x: -0.04, y: 0.57299924, z: -0.07}
+  m_Center: {x: 0, y: 0.57299924, z: 0.24}
 --- !u!114 &585545100972916615
 MonoBehaviour:
   m_ObjectHideFlags: 0

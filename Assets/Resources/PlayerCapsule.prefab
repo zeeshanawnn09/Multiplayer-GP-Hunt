@@ -2963,7 +2963,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   shieldDurationSeconds: 5
-  cooldownSeconds: 0
+  cooldownSeconds: 3
   shieldVisualRoot: {fileID: 2707945285555273108}
   shieldCooldownText: {fileID: 0}
 --- !u!54 &8545817734957597982
