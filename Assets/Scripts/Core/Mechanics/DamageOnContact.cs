@@ -48,6 +48,12 @@ public class DamageOnContact : MonoBehaviour
             return;
         }
 
+        PlayerControls playerControls = otherObject.GetComponentInParent<PlayerControls>();
+        if (playerControls == null || !playerControls.IsPriest)
+        {
+            return;
+        }
+
         HealthSystem healthSystem = otherObject.GetComponentInParent<HealthSystem>();
         if (healthSystem == null)
         {
@@ -77,6 +83,12 @@ public class DamageOnContact : MonoBehaviour
     private void RemovePlayerCooldown(GameObject otherObject)
     {
         if (!otherObject.CompareTag("Player"))
+        {
+            return;
+        }
+
+        PlayerControls playerControls = otherObject.GetComponentInParent<PlayerControls>();
+        if (playerControls == null || !playerControls.IsPriest)
         {
             return;
         }

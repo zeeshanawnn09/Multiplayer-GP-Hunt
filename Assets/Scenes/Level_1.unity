@@ -1034,6 +1034,9 @@ MonoBehaviour:
   healthText: {fileID: 352697397}
   flowerCountText: {fileID: 817332407}
   soulCountText: {fileID: 273860374}
+  vineCountText: {fileID: 0}
+  bloodPoolCountText: {fileID: 0}
+  burstCooldownText: {fileID: 0}
 --- !u!1 &273860372
 GameObject:
   m_ObjectHideFlags: 0
@@ -1415,6 +1418,8 @@ MonoBehaviour:
   playerCharacter: {fileID: 4879892127143676765, guid: fb23fe257a81b7142b9b29faea22ed3e, type: 3}
   ui: {fileID: 233058181}
   playerCam: {fileID: 1254924972}
+  priestSpawnPoints: []
+  ghostSpawnPoint: {fileID: 0}
   spawnRange: 5
   spawnRaycastStartHeight: 20
   spawnRaycastDistance: 200
@@ -6517,10 +6522,11 @@ MonoBehaviour:
   bellRingAnimationDurationSeconds: 1.5
   secondaryTaskObject: {fileID: 1222135230}
   shrineObject: {fileID: 1516552002}
+  ritualDoorClosedModel: {fileID: 0}
+  ritualDoorOpenModel: {fileID: 0}
   ritualDoorAnimator: {fileID: 0}
   ritualDoorOpenTrigger: Open
-  ritualDoorCloseTrigger: Close
-  ritualDoorIsOpenBool: IsOpen
+  ritualDoorOpenAnimationDurationSeconds: 0
   interactPrompt: {fileID: 639700116}
   interactPromptText: {fileID: 639700118}
   flowerOfferingPanel: {fileID: 279034727}
@@ -11617,6 +11623,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 5578799072370744992, guid: b58abdf08cd76c94583b4080590720f2, type: 3}
+      propertyPath: sceneViewId
+      value: 19
+      objectReference: {fileID: 0}
     - target: {fileID: 6214416326431763063, guid: b58abdf08cd76c94583b4080590720f2, type: 3}
       propertyPath: m_Name
       value: BloodPool

@@ -2,6 +2,7 @@ using System.Collections;
 using Photon.Pun;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using TMPro;
 
 public class ShieldSystem : MonoBehaviourPun
 {
@@ -15,6 +16,10 @@ public class ShieldSystem : MonoBehaviourPun
     [Header("Shield Visual")]
     [SerializeField]
     private GameObject shieldVisualRoot;
+
+    [Header("Shield UI")]
+    [SerializeField]
+    private TMP_Text shieldCooldownText;
 
     public bool IsShieldActive { get; private set; }
 
@@ -47,6 +52,27 @@ public class ShieldSystem : MonoBehaviourPun
         }
 
         TryActivateShield();
+
+        UpdateCooldownUI();
+    }
+
+    private void UpdateCooldownUI()
+    {
+        if (shieldCooldownText == null)
+        {
+            return;
+        }
+
+        float remaining = Mathf.Max(0f, _nextAllowedActivateTime - Time.time);
+        if (remaining > 0f)
+        {
+            int display = Mathf.CeilToInt(remaining);
+            shieldCooldownText.text = display.ToString();
+        }
+        else
+        {
+            shieldCooldownText.text = string.Empty;
+        }
     }
 
     public void TryActivateShield()

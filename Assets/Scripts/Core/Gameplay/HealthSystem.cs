@@ -23,6 +23,7 @@ public class HealthSystem : MonoBehaviourPun
 
     private bool _isDead;
     private bool _hasDisplayedHealth;
+    private bool _hasRequestedPriestAshPot;
     private PlayerControls _playerControls;
     private PlayerRespawnSystem _playerRespawnSystem;
     private CharacterController _characterController;
@@ -35,6 +36,7 @@ public class HealthSystem : MonoBehaviourPun
         _characterController = GetComponent<CharacterController>();
 
         CurrentHealth = startingHealth;
+        _hasRequestedPriestAshPot = false;
         UpdateLocalHealthUI();
     }
 
@@ -120,7 +122,11 @@ public class HealthSystem : MonoBehaviourPun
 
             if (PhotonNetwork.InRoom)
             {
-                photonView.RPC(nameof(RPC_RequestSpawnAshPot), RpcTarget.MasterClient, photonView.ViewID, transform.position + ashPotSpawnOffset);
+                RequestAshPotSpawn(transform.position + ashPotSpawnOffset);
+            }
+            else
+            {
+                SpawnAshPotLocally(transform.position + ashPotSpawnOffset, photonView.ViewID);
             }
         }
     }
@@ -146,6 +152,7 @@ public class HealthSystem : MonoBehaviourPun
         CurrentHealth = startingHealth;
         _isDead = false;
         _hasDisplayedHealth = false;
+        _hasRequestedPriestAshPot = false;
         photonView.RPC(nameof(RPC_SetPlayerDeadState), RpcTarget.All, false);
 
         if (_characterController != null)
@@ -163,6 +170,11 @@ public class HealthSystem : MonoBehaviourPun
     {
         _isDead = isDead;
         _playerControls?.RPC_SetDeadState(isDead);
+
+        if (isDead && photonView.IsMine && _playerControls != null && _playerControls.IsPriest)
+        {
+            RequestAshPotSpawn(transform.position + ashPotSpawnOffset);
+        }
     }
 
     [PunRPC]
@@ -172,6 +184,36 @@ public class HealthSystem : MonoBehaviourPun
         {
             return;
         }
+
+        SpawnAshPotOnMaster(deadPlayerViewId, spawnPosition);
+    }
+
+    private void RequestAshPotSpawn(Vector3 spawnPosition)
+    {
+        if (_hasRequestedPriestAshPot)
+        {
+            return;
+        }
+
+        _hasRequestedPriestAshPot = true;
+
+        if (!PhotonNetwork.InRoom)
+        {
+            SpawnAshPotLocally(spawnPosition, photonView.ViewID);
+            return;
+        }
+
+        if (PhotonNetwork.IsMasterClient)
+        {
+            SpawnAshPotOnMaster(photonView.ViewID, spawnPosition);
+            return;
+        }
+
+        photonView.RPC(nameof(RPC_RequestSpawnAshPot), RpcTarget.MasterClient, photonView.ViewID, spawnPosition);
+    }
+
+    private void SpawnAshPotOnMaster(int deadPlayerViewId, Vector3 spawnPosition)
+    {
 
         AshPotPickup[] activePots = FindObjectsByType<AshPotPickup>(FindObjectsSortMode.None);
         for (int i = 0; i < activePots.Length; i++)
@@ -202,6 +244,26 @@ public class HealthSystem : MonoBehaviourPun
         ashPotPickup.Initialize(deadPlayerViewId);
     }
 
+    private void SpawnAshPotLocally(Vector3 spawnPosition, int deadPlayerViewId)
+    {
+        if (ashPotPrefab == null)
+        {
+            Debug.LogWarning("Ash pot prefab is not assigned. Drag and drop an Ash Pot prefab into HealthSystem.");
+            return;
+        }
+
+        GameObject ashPotObject = Instantiate(ashPotPrefab, spawnPosition, Quaternion.identity);
+        AshPotPickup ashPotPickup = ashPotObject.GetComponent<AshPotPickup>();
+
+        if (ashPotPickup == null)
+        {
+            Debug.LogWarning($"Spawned ash pot prefab '{ashPotPrefab.name}' is missing AshPotPickup component.");
+            return;
+        }
+
+        ashPotPickup.Initialize(deadPlayerViewId);
+    }
+
     [PunRPC]
     private void RPC_SetVisualState(bool isVisible)
     {
@@ -220,6 +282,7 @@ public class HealthSystem : MonoBehaviourPun
         CurrentHealth = startingHealth;
         _isDead = false;
         _hasDisplayedHealth = false;
+        _hasRequestedPriestAshPot = false;
         photonView.RPC(nameof(RPC_SetPlayerDeadState), RpcTarget.All, false);
 
         if (photonView.IsMine)

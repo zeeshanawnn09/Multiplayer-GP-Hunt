@@ -21,10 +21,12 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [SerializeField] private GameObject shrineObject;
 
     [Header("Ritual Door")]
+    [SerializeField] private GameObject ritualDoorClosedModel;
+    [SerializeField] private GameObject ritualDoorOpenModel;
     [SerializeField] private Animator ritualDoorAnimator;
     [SerializeField] private string ritualDoorOpenTrigger = "Open";
-    [SerializeField] private string ritualDoorCloseTrigger = "Close";
-    [SerializeField] private string ritualDoorIsOpenBool = "IsOpen";
+    [SerializeField] private float ritualDoorOpenAnimationDurationSeconds = 0f;
+
 
     [Header("Interaction UI")]
     [SerializeField] private GameObject interactPrompt;
@@ -58,8 +60,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [SerializeField] private int smashesRequired = 20;
 
     [Header("Task UI")]
-    [SerializeField] private TMP_Text taskText;
+    [SerializeField] private Image taskUnfilledBackgroundImage;
+    [SerializeField] private Image taskFilledImage;
     [SerializeField] private int initialTaskValue = 0;
+
+    private const int TotalTaskSteps = 5;
 
     private const string BellVisibleKey = "BellVisible";
     private const string BellInteractableKey = "BellInteractable";
@@ -103,14 +108,13 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private bool _isRitualDoorOpen;
     private bool _hasDoorStateInitialized;
     private int _doorOpenTriggerHash;
-    private int _doorCloseTriggerHash;
-    private int _doorIsOpenBoolHash;
+    private bool _hasDoorOpenTrigger;
+    private Coroutine _ritualDoorOpenCoroutine;
 
     private void Awake()
     {
         _doorOpenTriggerHash = string.IsNullOrEmpty(ritualDoorOpenTrigger) ? 0 : Animator.StringToHash(ritualDoorOpenTrigger);
-        _doorCloseTriggerHash = string.IsNullOrEmpty(ritualDoorCloseTrigger) ? 0 : Animator.StringToHash(ritualDoorCloseTrigger);
-        _doorIsOpenBoolHash = string.IsNullOrEmpty(ritualDoorIsOpenBool) ? 0 : Animator.StringToHash(ritualDoorIsOpenBool);
+        CacheRitualDoorAnimatorParameters();
 
         if (bellObjects == null || bellObjects.Length == 0)
         {
@@ -147,15 +151,40 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         SetShrineVisibleLocal(false);
         SetPromptVisible(false, string.Empty);
         SetFlowerOfferingPanelVisible(false);
+        ApplyRitualDoorVisualState(false);
 
         _taskValue = initialTaskValue;
         UpdateTaskUI();
     }
 
+    private void CacheRitualDoorAnimatorParameters()
+    {
+        _hasDoorOpenTrigger = false;
+
+        if (ritualDoorAnimator == null)
+        {
+            return;
+        }
+
+        AnimatorControllerParameter[] parameters = ritualDoorAnimator.parameters;
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            AnimatorControllerParameter parameter = parameters[i];
+            if (parameter.type == AnimatorControllerParameterType.Trigger)
+            {
+                if (_doorOpenTriggerHash != 0 && parameter.nameHash == _doorOpenTriggerHash)
+                {
+                    _hasDoorOpenTrigger = true;
+                }
+            }
+        }
+    }
+
     private void Start()
     {
         SyncFromRoomProperties();
-        UpdateRitualDoorStateFromLampProgress(forceInstantState: true);
+        _hasDoorStateInitialized = true;
+        SetRitualDoorState(false, animateTransition: false);
 
         if (PhotonNetwork.InRoom && PhotonNetwork.IsMasterClient)
         {
@@ -182,7 +211,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
-        if (_isBellAnimating || (_isBellVisible && !_isBellInteractable))
+        if (_isBellVisible && !_isBellInteractable)
         {
             SetPromptVisible(false, string.Empty);
             return;
@@ -337,79 +366,129 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     {
         bool shouldBeOpen = IsLampRequirementMet();
 
+        if (_isRitualDoorOpen)
+        {
+            return;
+        }
+
         if (!_hasDoorStateInitialized)
         {
             _hasDoorStateInitialized = true;
-            SetRitualDoorState(shouldBeOpen, animateTransition: false);
+            SetRitualDoorState(false, animateTransition: false);
             return;
         }
 
-        if (!forceInstantState && shouldBeOpen == _isRitualDoorOpen)
+        if (!shouldBeOpen)
         {
             return;
         }
 
-        SetRitualDoorState(shouldBeOpen, animateTransition: !forceInstantState);
+        SetRitualDoorState(true, animateTransition: !forceInstantState);
     }
 
     private void SetRitualDoorState(bool isOpen, bool animateTransition)
     {
         _isRitualDoorOpen = isOpen;
 
+        if (!isOpen)
+        {
+            if (_ritualDoorOpenCoroutine != null)
+            {
+                StopCoroutine(_ritualDoorOpenCoroutine);
+                _ritualDoorOpenCoroutine = null;
+            }
+
+            ApplyRitualDoorVisualState(false);
+            return;
+        }
+
         if (ritualDoorAnimator == null)
         {
+            ApplyRitualDoorVisualState(true);
             return;
         }
 
-        if (_doorIsOpenBoolHash != 0)
+        if (_hasDoorOpenTrigger && animateTransition)
         {
-            ritualDoorAnimator.SetBool(_doorIsOpenBoolHash, isOpen);
+            ritualDoorAnimator.SetTrigger(_doorOpenTriggerHash);
         }
 
-        if (!animateTransition)
+        if (_ritualDoorOpenCoroutine != null)
         {
-            return;
+            StopCoroutine(_ritualDoorOpenCoroutine);
         }
 
-        if (isOpen)
+        _ritualDoorOpenCoroutine = StartCoroutine(ApplyRitualDoorOpenAfterDelay(animateTransition));
+    }
+
+    private System.Collections.IEnumerator ApplyRitualDoorOpenAfterDelay(bool animateTransition)
+    {
+        float waitSeconds = animateTransition ? GetRitualDoorOpenAnimationDurationSeconds() : 0f;
+        if (waitSeconds > 0f)
         {
-            if (_doorCloseTriggerHash != 0)
+            yield return new WaitForSeconds(waitSeconds);
+        }
+
+        ApplyRitualDoorVisualState(true);
+        _ritualDoorOpenCoroutine = null;
+    }
+
+    private void ApplyRitualDoorVisualState(bool isOpen)
+    {
+        if (ritualDoorClosedModel != null)
+        {
+            ritualDoorClosedModel.SetActive(!isOpen);
+        }
+
+        if (ritualDoorOpenModel != null)
+        {
+            ritualDoorOpenModel.SetActive(isOpen);
+        }
+    }
+
+    private float GetRitualDoorOpenAnimationDurationSeconds()
+    {
+        if (ritualDoorOpenAnimationDurationSeconds > 0f)
+        {
+            return ritualDoorOpenAnimationDurationSeconds;
+        }
+
+        if (ritualDoorAnimator != null && ritualDoorAnimator.runtimeAnimatorController != null)
+        {
+            AnimationClip[] animationClips = ritualDoorAnimator.runtimeAnimatorController.animationClips;
+            for (int i = 0; i < animationClips.Length; i++)
             {
-                ritualDoorAnimator.ResetTrigger(_doorCloseTriggerHash);
+                AnimationClip clip = animationClips[i];
+                if (clip != null && (clip.name == "DoorOpenAnim" || clip.name.IndexOf("Open", System.StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return Mathf.Max(0.1f, clip.length);
+                }
             }
 
-            if (_doorOpenTriggerHash != 0)
+            if (animationClips.Length > 0 && animationClips[0] != null)
             {
-                ritualDoorAnimator.SetTrigger(_doorOpenTriggerHash);
+                return Mathf.Max(0.1f, animationClips[0].length);
             }
         }
-        else
-        {
-            if (_doorOpenTriggerHash != 0)
-            {
-                ritualDoorAnimator.ResetTrigger(_doorOpenTriggerHash);
-            }
 
-            if (_doorCloseTriggerHash != 0)
-            {
-                ritualDoorAnimator.SetTrigger(_doorCloseTriggerHash);
-            }
-        }
+        return 1f;
     }
 
     private bool IsAnyObjectiveVisible()
     {
-        return _isBellVisible || _isSecondaryVisible || _isShrineVisible || _isFlowerOfferingActive;
+        return GetCurrentTaskStep() < TotalTaskSteps;
     }
 
     private bool IsBellObjectiveActive()
     {
-        return _completedRings < totalRingsRequired;
+        int currentTaskStep = GetCurrentTaskStep();
+        return currentTaskStep == 0 || currentTaskStep == 4;
     }
 
     private bool IsSecondaryObjectiveUnlocked()
     {
-        return _completedRings >= totalRingsRequired;
+        int currentTaskStep = GetCurrentTaskStep();
+        return currentTaskStep == 1 || currentTaskStep == 3;
     }
 
     private bool IsSecondaryObjectiveComplete()
@@ -430,17 +509,39 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private bool IsFlowerOfferingObjectiveUnlocked()
     {
-        return IsSecondaryObjectiveComplete();
+        return GetCurrentTaskStep() == 2;
     }
 
     private bool IsFlowerOfferingObjectiveComplete()
     {
-        return _taskValue >= initialTaskValue + 3;
+        return GetCurrentTaskStep() >= TotalTaskSteps;
     }
 
     private void EvaluateObjectiveVisibilityFromMaster()
     {
-        if (IsBellObjectiveActive())
+        int currentTaskStep = GetCurrentTaskStep();
+
+        if (currentTaskStep >= TotalTaskSteps)
+        {
+            if (_isSecondaryVisible)
+            {
+                SetSecondaryVisible(false);
+            }
+
+            if (_isShrineVisible)
+            {
+                SetShrineVisible(false);
+            }
+
+            if (_isBellVisible)
+            {
+                SetBellInteractable(false);
+            }
+
+            return;
+        }
+
+        if (currentTaskStep == 0 || currentTaskStep == 4)
         {
             if (_isSecondaryVisible)
             {
@@ -469,7 +570,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         SetBellVisible(true);
         SetBellInteractable(false);
 
-        if (!IsSecondaryObjectiveComplete())
+        if (currentTaskStep == 1 || currentTaskStep == 3)
         {
             if (_isShrineVisible)
             {
@@ -494,7 +595,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             SetSecondaryVisible(false);
         }
 
-        if (!IsFlowerOfferingObjectiveUnlocked() || IsFlowerOfferingObjectiveComplete())
+        if (currentTaskStep != 2)
         {
             if (_isShrineVisible)
             {
@@ -632,17 +733,40 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void HandleBellRingAccepted()
     {
-        int bellIndex = Mathf.Clamp(_completedRings, 0, Mathf.Max(0, GetBellSequenceCount() - 1));
+        int currentTaskStep = GetCurrentTaskStep();
         _completedRings = Mathf.Clamp(_completedRings + 1, 0, totalRingsRequired);
         SetRoomRingCount(_completedRings);
         SetBellInteractable(false);
 
         bool isObjectiveComplete = !IsBellObjectiveActive();
-        StartBellRingAnimation(bellIndex, isObjectiveComplete);
+
+        if (!isObjectiveComplete)
+        {
+            return;
+        }
+
+        SetRoomTaskValue(_taskValue + 1);
+
+        if (currentTaskStep == 0)
+        {
+            SetRoomSecondaryCount(0);
+            double now = PhotonNetwork.Time;
+            SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
+            SetRoomSecondaryVisible(false);
+        }
+        else if (currentTaskStep == 4)
+        {
+            SetRoomSecondaryVisible(false);
+            SetShrineVisible(false);
+        }
+
+        StopBellCooldown();
+        EvaluateObjectiveVisibilityFromMaster();
     }
 
     private void HandleSecondaryInteractionAccepted()
     {
+        int currentTaskStep = GetCurrentTaskStep();
         _secondaryInteractionsCompleted = Mathf.Clamp(_secondaryInteractionsCompleted + 1, 0, secondaryInteractionsRequired);
         SetRoomSecondaryCount(_secondaryInteractionsCompleted);
         SetSecondaryVisible(false);
@@ -651,8 +775,19 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         {
             SetRoomTaskValue(_taskValue + 1);
             StopSecondaryCooldown();
-            SetShrineVisible(false);
-            StartShrineCooldown();
+
+            if (currentTaskStep == 1)
+            {
+                SetShrineVisible(false);
+                StartShrineCooldown();
+            }
+            else if (currentTaskStep == 3)
+            {
+                SetRoomRingCount(0);
+                SetBellVisible(true);
+                SetBellInteractable(false);
+            }
+
             EvaluateObjectiveVisibilityFromMaster();
             return;
         }
@@ -686,6 +821,10 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         SetRoomOfferingActive(false);
         SetShrineVisible(false);
         SetRoomTaskValue(_taskValue + 1);
+        SetRoomSecondaryCount(0);
+        double now = PhotonNetwork.Time;
+        SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
+        SetRoomSecondaryVisible(false);
         StopShrineCooldown();
         EvaluateObjectiveVisibilityFromMaster();
     }
@@ -823,6 +962,16 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         GameObject bellToAnimate = GetBellObject(bellIndex);
         Animator animatorToPlay = GetBellAnimator(bellToAnimate);
+        Transform animatedBellTransform = animatorToPlay != null
+            ? animatorToPlay.transform
+            : (bellToAnimate != null ? bellToAnimate.transform : null);
+        Vector3 anchoredLocalPosition = Vector3.zero;
+        bool shouldLockBellLocalPosition = animatedBellTransform != null;
+
+        if (shouldLockBellLocalPosition)
+        {
+            anchoredLocalPosition = animatedBellTransform.localPosition;
+        }
 
         if (bellToAnimate != null && !bellToAnimate.activeSelf)
         {
@@ -836,7 +985,23 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             animatorToPlay.Play(0, 0, 0f);
         }
 
-        yield return new WaitForSeconds(Mathf.Max(0.1f, bellRingAnimationDurationSeconds));
+        float animationWaitSeconds = Mathf.Max(0.1f, bellRingAnimationDurationSeconds);
+        float elapsedSeconds = 0f;
+        while (elapsedSeconds < animationWaitSeconds)
+        {
+            if (shouldLockBellLocalPosition)
+            {
+                animatedBellTransform.localPosition = anchoredLocalPosition;
+            }
+
+            elapsedSeconds += Time.deltaTime;
+            yield return null;
+        }
+
+        if (shouldLockBellLocalPosition)
+        {
+            animatedBellTransform.localPosition = anchoredLocalPosition;
+        }
 
         _isBellAnimating = false;
 
@@ -844,7 +1009,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         {
             if (PhotonNetwork.IsMasterClient)
             {
-                SetBellVisible(false);
+                SetBellInteractable(false);
 
                 if (isObjectiveComplete)
                 {
@@ -864,7 +1029,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         }
         else
         {
-            SetBellVisible(false);
+            SetBellInteractable(false);
 
             if (!isObjectiveComplete)
             {
@@ -1625,10 +1790,28 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void UpdateTaskUI()
     {
-        if (taskText != null)
+        if (taskUnfilledBackgroundImage != null)
         {
-            taskText.text = _taskValue.ToString();
+            taskUnfilledBackgroundImage.enabled = true;
         }
+
+        if (taskFilledImage == null)
+        {
+            return;
+        }
+
+        taskFilledImage.type = Image.Type.Filled;
+        taskFilledImage.fillMethod = Image.FillMethod.Horizontal;
+        taskFilledImage.fillOrigin = (int)Image.OriginHorizontal.Left;
+
+        int taskProgress = Mathf.Clamp(GetCurrentTaskStep(), 0, TotalTaskSteps);
+        int safeTotalSteps = Mathf.Max(1, TotalTaskSteps);
+        taskFilledImage.fillAmount = Mathf.Clamp01((float)taskProgress / safeTotalSteps);
+    }
+
+    private int GetCurrentTaskStep()
+    {
+        return Mathf.Clamp(_taskValue - initialTaskValue, 0, TotalTaskSteps);
     }
 
     private int GetSharedFlowerCount()
