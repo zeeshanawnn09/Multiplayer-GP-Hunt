@@ -190,6 +190,8 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
     Vector2 moveInput;
     Vector2 lookInput;
     bool interactPressed;
+    float lastInteractTime;
+    bool pickupPressed;
 
     private void Awake()
     {
@@ -212,6 +214,16 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
             }
 
             interactPressed = true;
+            lastInteractTime = Time.time;
+        };
+        inputActions.Player.Pickup.performed += _ =>
+        {
+            if (!photonView.IsMine)
+            {
+                return;
+            }
+
+            pickupPressed = true;
             TryPickupInteractables();
         };
 
@@ -266,6 +278,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
     {
         if (photonView.IsMine)
         {
+            if (interactPressed && Time.time - lastInteractTime > 0.1f)
+            {
+                interactPressed = false;
+            }
+
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 TryFireProjectile();
@@ -887,6 +904,11 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
     private void TryPickupInteractables()
     {
+        if (!ConsumePickupPressed())
+        {
+            return;
+        }
+
         Camera aimCamera = GetAimCamera();
         if (aimCamera == null)
         {
@@ -1332,12 +1354,23 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
     public bool ConsumeInteractPressed()
     {
-        if (!photonView.IsMine || isDead || !interactPressed)
+        if (!photonView.IsMine || isDead || !interactPressed || Time.time - lastInteractTime > 0.1f)
         {
             return false;
         }
 
         interactPressed = false;
+        return true;
+    }
+
+    public bool ConsumePickupPressed()
+    {
+        if (!photonView.IsMine || isDead || !pickupPressed)
+        {
+            return false;
+        }
+
+        pickupPressed = false;
         return true;
     }
 

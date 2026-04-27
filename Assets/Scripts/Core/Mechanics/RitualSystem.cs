@@ -11,8 +11,6 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [Header("Bell Setup")]
     [SerializeField] private GameObject bellObject;
     [SerializeField] private GameObject[] bellObjects;
-    [SerializeField] private Animator bellAnimator;
-    [SerializeField] private float bellRingAnimationDurationSeconds = 1.5f;
 
     [Header("Secondary Ritual Setup")]
     [SerializeField] private GameObject secondaryTaskObject;
@@ -91,12 +89,10 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private bool _isBellCoolingDown;
     private bool _isSecondaryCoolingDown;
     private bool _isShrineCoolingDown;
-    private bool _isBellAnimating;
 
     private Coroutine _bellCooldownCoroutine;
     private Coroutine _secondaryCooldownCoroutine;
     private Coroutine _shrineCooldownCoroutine;
-    private Coroutine _bellRingAnimationCoroutine;
 
     private int _completedRings;
     private int _secondaryInteractionsCompleted;
@@ -127,23 +123,6 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (bellObjects != null && bellObjects.Length > 0)
         {
             totalRingsRequired = bellObjects.Length;
-        }
-
-        if (bellAnimator == null && bellObject != null)
-        {
-            bellAnimator = bellObject.GetComponentInChildren<Animator>(true);
-        }
-
-        if (bellAnimator != null && bellRingAnimationDurationSeconds <= 0f)
-        {
-            AnimationClip[] animationClips = bellAnimator.runtimeAnimatorController != null
-                ? bellAnimator.runtimeAnimatorController.animationClips
-                : null;
-
-            if (animationClips != null && animationClips.Length > 0)
-            {
-                bellRingAnimationDurationSeconds = Mathf.Max(0.1f, animationClips[0].length);
-            }
         }
 
         SetBellVisibleLocal(false);
@@ -857,30 +836,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         _bellCooldownCoroutine = StartCoroutine(BellCooldownCoroutine());
     }
 
-    private void StartBellRingAnimation(int bellIndex, bool isObjectiveComplete)
-    {
-        StopBellRingAnimation();
 
-        if (PhotonNetwork.InRoom)
-        {
-            photonView.RPC(nameof(RPC_PlayBellRingAnimation), RpcTarget.All, bellIndex, isObjectiveComplete);
-        }
-        else
-        {
-            _bellRingAnimationCoroutine = StartCoroutine(BellRingAnimationCoroutine(bellIndex, isObjectiveComplete));
-        }
-    }
-
-    private void StopBellRingAnimation()
-    {
-        _isBellAnimating = false;
-
-        if (_bellRingAnimationCoroutine != null)
-        {
-            StopCoroutine(_bellRingAnimationCoroutine);
-            _bellRingAnimationCoroutine = null;
-        }
-    }
 
     private void StopBellCooldown()
     {
@@ -942,109 +898,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         EvaluateObjectiveVisibilityFromMaster();
     }
 
-    private Animator GetBellAnimator(GameObject bell)
-    {
-        if (bell != null)
-        {
-            Animator animator = bell.GetComponentInChildren<Animator>(true);
-            if (animator != null)
-            {
-                return animator;
-            }
-        }
 
-        return bellAnimator;
-    }
 
-    private System.Collections.IEnumerator BellRingAnimationCoroutine(int bellIndex, bool isObjectiveComplete)
-    {
-        _isBellAnimating = true;
 
-        GameObject bellToAnimate = GetBellObject(bellIndex);
-        Animator animatorToPlay = GetBellAnimator(bellToAnimate);
-        Transform animatedBellTransform = animatorToPlay != null
-            ? animatorToPlay.transform
-            : (bellToAnimate != null ? bellToAnimate.transform : null);
-        Vector3 anchoredLocalPosition = Vector3.zero;
-        bool shouldLockBellLocalPosition = animatedBellTransform != null;
 
-        if (shouldLockBellLocalPosition)
-        {
-            anchoredLocalPosition = animatedBellTransform.localPosition;
-        }
 
-        if (bellToAnimate != null && !bellToAnimate.activeSelf)
-        {
-            bellToAnimate.SetActive(true);
-        }
-
-        if (animatorToPlay != null)
-        {
-            animatorToPlay.Rebind();
-            animatorToPlay.Update(0f);
-            animatorToPlay.Play(0, 0, 0f);
-        }
-
-        float animationWaitSeconds = Mathf.Max(0.1f, bellRingAnimationDurationSeconds);
-        float elapsedSeconds = 0f;
-        while (elapsedSeconds < animationWaitSeconds)
-        {
-            if (shouldLockBellLocalPosition)
-            {
-                animatedBellTransform.localPosition = anchoredLocalPosition;
-            }
-
-            elapsedSeconds += Time.deltaTime;
-            yield return null;
-        }
-
-        if (shouldLockBellLocalPosition)
-        {
-            animatedBellTransform.localPosition = anchoredLocalPosition;
-        }
-
-        _isBellAnimating = false;
-
-        if (PhotonNetwork.InRoom)
-        {
-            if (PhotonNetwork.IsMasterClient)
-            {
-                SetBellInteractable(false);
-
-                if (isObjectiveComplete)
-                {
-                    SetRoomTaskValue(initialTaskValue + 1);
-                    SetRoomSecondaryCount(0);
-                    double now = PhotonNetwork.Time;
-                    SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
-                    SetRoomSecondaryVisible(false);
-                    StopBellCooldown();
-                    EvaluateObjectiveVisibilityFromMaster();
-                }
-                else
-                {
-                    StartBellCooldown();
-                }
-            }
-        }
-        else
-        {
-            SetBellInteractable(false);
-
-            if (!isObjectiveComplete)
-            {
-                StartBellCooldown();
-            }
-        }
-
-        _bellRingAnimationCoroutine = null;
-    }
-
-    [PunRPC]
-    private void RPC_PlayBellRingAnimation(int bellIndex, bool isObjectiveComplete)
-    {
-        _bellRingAnimationCoroutine = StartCoroutine(BellRingAnimationCoroutine(bellIndex, isObjectiveComplete));
-    }
 
     private System.Collections.IEnumerator SecondaryCooldownCoroutine()
     {
@@ -1680,7 +1538,6 @@ public class RitualSystem : MonoBehaviourPunCallbacks
                 && i == visibleBellCount
                 && _isBellVisible
                 && _isBellInteractable
-                && !_isBellAnimating
                 && !_isBellCoolingDown
                 && IsLampRequirementMet();
 
@@ -1701,7 +1558,6 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         if (!isVisible)
         {
-            StopBellRingAnimation();
             _holdProgress = 0f;
         }
 
