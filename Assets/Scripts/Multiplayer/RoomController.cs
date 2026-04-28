@@ -108,6 +108,7 @@ public class RoomController : MonoBehaviourPunCallbacks
     private System.Collections.IEnumerator AssignRolesWhenReady()
     {
         float elapsedTime = 0f;
+        bool hasLoggedTimeout = false;
 
         while (PhotonNetwork.IsMasterClient && PhotonNetwork.InRoom)
         {
@@ -116,19 +117,20 @@ public class RoomController : MonoBehaviourPunCallbacks
 
             if (roomPlayerCount >= REQUIRED_PLAYERS && spawnedPlayerCount >= roomPlayerCount)
             {
-                AssignRolesToAllPlayers();
-                yield break;
+                if (AssignRolesToAllPlayers())
+                {
+                    yield break;
+                }
             }
 
-            if (elapsedTime >= ROLE_ASSIGNMENT_TIMEOUT_SECONDS)
+            if (!hasLoggedTimeout && elapsedTime >= ROLE_ASSIGNMENT_TIMEOUT_SECONDS)
             {
                 Debug.LogWarning($"Timed out waiting for player objects. Room players={roomPlayerCount}, spawned player objects={spawnedPlayerCount}. Attempting role assignment anyway.");
-                AssignRolesToAllPlayers();
-                yield break;
+                hasLoggedTimeout = true;
             }
 
             elapsedTime += 0.25f;
-            yield return new WaitForSeconds(0.25f);
+            yield return new WaitForSeconds(hasLoggedTimeout ? 0.5f : 0.25f);
         }
     }
 
@@ -136,7 +138,23 @@ public class RoomController : MonoBehaviourPunCallbacks
     void SpawnLocalPlayer()
     {
         Debug.Log($"SpawnLocalPlayer called. LocalPlayer: {PhotonNetwork.LocalPlayer?.NickName}, InRoom: {PhotonNetwork.InRoom}, PlayerCount: {PhotonNetwork.CurrentRoom?.PlayerCount}");
-        
+
+        if (PlayerControls.localPlayerInstance != null)
+        {
+            PhotonView existingView = PlayerControls.localPlayerInstance.GetComponent<PhotonView>();
+            bool hasValidOwnership = existingView != null
+                && existingView.Owner != null
+                && PhotonNetwork.LocalPlayer != null
+                && existingView.OwnerActorNr == PhotonNetwork.LocalPlayer.ActorNumber;
+
+            if (!hasValidOwnership)
+            {
+                Debug.LogWarning("Clearing stale localPlayerInstance before spawning the local player.");
+                Destroy(PlayerControls.localPlayerInstance);
+                PlayerControls.localPlayerInstance = null;
+            }
+        }
+
         if (PlayerControls.localPlayerInstance == null)
         {
             Vector3 spawnPos = GetInitialSpawnPosition();
@@ -228,18 +246,18 @@ public class RoomController : MonoBehaviourPunCallbacks
     }
     
     //Randomly assigns roles to all players in the room
-    void AssignRolesToAllPlayers()
+    bool AssignRolesToAllPlayers()
     {
         if (!PhotonNetwork.IsMasterClient)
         {
             Debug.Log("Not master client, skipping role assignment");
-            return;
+            return false;
         }
 
         if (rolesAssigned)
         {
             Debug.Log("Roles already assigned, skipping");
-            return;
+            return true;
         }
 
         // Get all players in room
@@ -273,6 +291,27 @@ public class RoomController : MonoBehaviourPunCallbacks
         {
             var pc = playerControls[j];
             Debug.Log($"  PlayerControl {j}: Owner={pc.photonView.Owner?.NickName ?? "NULL"}, ActorNumber={pc.photonView.Owner?.ActorNumber ?? -1}, ViewID={pc.photonView.ViewID}, IsMine={pc.photonView.IsMine}");
+        }
+
+        for (int i = 0; i < players.Length; i++)
+        {
+            Player player = players[i];
+            bool hasPlayerObject = false;
+
+            foreach (PlayerControls pControl in playerControls)
+            {
+                if (pControl.photonView != null && pControl.photonView.OwnerActorNr == player.ActorNumber)
+                {
+                    hasPlayerObject = true;
+                    break;
+                }
+            }
+
+            if (!hasPlayerObject)
+            {
+                Debug.Log($"Waiting for PlayerControl to spawn for player {player.NickName} (ActorNumber: {player.ActorNumber}).");
+                return false;
+            }
         }
 
         // Assign roles to players
@@ -318,6 +357,8 @@ public class RoomController : MonoBehaviourPunCallbacks
         {
             Debug.LogWarning("Role assignment was not completed for every player. The master will be able to retry on the next join event.");
         }
+
+        return rolesAssigned;
     }
 
     private Vector3 GetRoleSpawnPosition(PlayerRole role, int priestIndex)

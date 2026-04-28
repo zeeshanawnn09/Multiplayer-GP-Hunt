@@ -8,6 +8,7 @@ public class SoulPickup : MonoBehaviourPunCallbacks
 
     private AISoulSystem spawnSystem;
     private bool isPickupEnabled = true;
+    private bool _localPlayerNearby = false;
 
     public int SpawnPointIndex { get; private set; } = -1;
     public int DroppedOwnerActorNumber { get; private set; } = -1;
@@ -37,6 +38,29 @@ public class SoulPickup : MonoBehaviourPunCallbacks
         }
 
         photonView.RPC(nameof(RPC_RequestCollectSoul), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
+    }
+
+    private void Update()
+    {
+        if (PlayerControls.localPlayerInstance == null)
+        {
+            return;
+        }
+
+        Vector3 playerPos = PlayerControls.localPlayerInstance.transform.position;
+        float distance = Vector3.Distance(playerPos, GetPickupWorldPosition());
+        bool nearby = distance <= Mathf.Max(0.1f, pickupDistance);
+
+        if (nearby && !_localPlayerNearby)
+        {
+            _localPlayerNearby = true;
+            // Auto-pickup when nearby
+            RequestPickup();
+        }
+        else if (!nearby && _localPlayerNearby)
+        {
+            _localPlayerNearby = false;
+        }
     }
 
     [PunRPC]

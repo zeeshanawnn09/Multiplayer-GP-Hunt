@@ -7,6 +7,7 @@ public class FlowerPickup : MonoBehaviourPunCallbacks
     private float pickupDistance = 3f;
 
     private FlowerSpawningSystem spawnSystem;
+    private bool _localPlayerNearby;
 
     public int SpawnPointIndex { get; private set; } = -1;
 
@@ -26,6 +27,29 @@ public class FlowerPickup : MonoBehaviourPunCallbacks
         }
 
         photonView.RPC("RPC_RequestCollectFlower", RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
+    }
+
+    private void Update()
+    {
+        if (PlayerControls.localPlayerInstance == null)
+        {
+            return;
+        }
+
+        Vector3 playerPos = PlayerControls.localPlayerInstance.transform.position;
+        float distance = Vector3.Distance(playerPos, GetPickupWorldPosition());
+        bool nearby = distance <= Mathf.Max(0.1f, pickupDistance);
+
+        if (nearby && !_localPlayerNearby)
+        {
+            _localPlayerNearby = true;
+            // Auto-pickup when nearby
+            RequestPickup();
+        }
+        else if (!nearby && _localPlayerNearby)
+        {
+            _localPlayerNearby = false;
+        }
     }
 
     [PunRPC]

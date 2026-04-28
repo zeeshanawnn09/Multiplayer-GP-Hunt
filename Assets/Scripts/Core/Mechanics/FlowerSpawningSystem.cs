@@ -343,6 +343,8 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
 
         if (!PhotonNetwork.CurrentRoom.CustomProperties.ContainsKey(PlayerControls.FlowerCountRoomPropertyKey))
         {
+            Debug.Log("[FlowerSpawningSystem] Initializing shared flower count to 0.");
+
             PhotonNetwork.CurrentRoom.SetCustomProperties(new ExitGames.Client.Photon.Hashtable
             {
                 { PlayerControls.FlowerCountRoomPropertyKey, 0 }
@@ -363,9 +365,12 @@ public class FlowerSpawningSystem : MonoBehaviourPunCallbacks
             currentCount = storedCount;
         }
 
+        int nextCount = currentCount + 1;
+        Debug.Log($"[FlowerSpawningSystem] Incrementing shared flower count from {currentCount} to {nextCount}.");
+
         PhotonNetwork.CurrentRoom.SetCustomProperties(new ExitGames.Client.Photon.Hashtable
         {
-            { PlayerControls.FlowerCountRoomPropertyKey, currentCount + 1 }
+            { PlayerControls.FlowerCountRoomPropertyKey, nextCount }
         });
     }
 }

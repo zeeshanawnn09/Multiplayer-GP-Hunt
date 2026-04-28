@@ -132,6 +132,9 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
     private float fireCooldownSeconds = 0.2f;
 
     [SerializeField]
+    private AudioClip fireProjectileSound;
+
+    [SerializeField]
     private int priestBurstShotLimit = 5;
 
     [SerializeField]
@@ -183,6 +186,7 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
     private float networkedAnimationSpeed;
     private float smoothedAnimationSpeed;
     private Vector3 previousPosition;
+    private AudioSource audioSource;
     private readonly Queue<PooledProjectile> availableProjectiles = new Queue<PooledProjectile>();
     private readonly List<PooledProjectile> pooledProjectiles = new List<PooledProjectile>();
 
@@ -200,6 +204,9 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
         animatorSpeedHash = Animator.StringToHash(animatorSpeedParameter);
         animatorAttackTriggerHash = Animator.StringToHash(animatorAttackTriggerParameter);
+
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
 
         inputActions = new InputSystem_Actions();
         inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
@@ -1049,6 +1056,12 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
 
         PlayAttackAnimation();
         photonView.RPC(nameof(RPC_PlayAttackAnimation), RpcTarget.All);
+        
+        if (fireProjectileSound != null && audioSource != null)
+        {
+            audioSource.PlayOneShot(fireProjectileSound);
+        }
+        
         photonView.RPC(nameof(RPC_SpawnProjectileVisual), RpcTarget.All, startPosition, targetPosition, projectileVisualSpeed);
         nextFireTime = Time.time + Mathf.Max(0.05f, fireCooldownSeconds);
 
@@ -1316,15 +1329,36 @@ public class PlayerControls : MonoBehaviourPunCallbacks, IPunObservable
             controller = GetComponent<CharacterController>();
         }
 
+        // Try to snap the target position to the ground to avoid floating spawns.
+        Vector3 targetPosition = worldPosition;
+        RaycastHit hit;
+        float rayStartHeight = 2f;
+        float rayDistance = 10f;
+
+        if (Physics.Raycast(worldPosition + Vector3.up * rayStartHeight, Vector3.down, out hit, rayDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+        {
+            // If we have a CharacterController, account for its bottom offset and skin width.
+            if (controller != null)
+            {
+                float bottomOffsetFromTransform = controller.center.y - (controller.height * 0.5f);
+                float requiredYOffset = -bottomOffsetFromTransform + controller.skinWidth + 0.05f;
+                targetPosition = new Vector3(worldPosition.x, hit.point.y + requiredYOffset, worldPosition.z);
+            }
+            else
+            {
+                targetPosition = new Vector3(worldPosition.x, hit.point.y, worldPosition.z);
+            }
+        }
+
         if (controller != null && controller.enabled)
         {
             controller.enabled = false;
-            transform.position = worldPosition;
+            transform.position = targetPosition;
             controller.enabled = true;
         }
         else
         {
-            transform.position = worldPosition;
+            transform.position = targetPosition;
         }
     }
 

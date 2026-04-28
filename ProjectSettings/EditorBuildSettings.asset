@@ -8,15 +8,18 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/OutdoorsScene.unity
     guid: 8124e5870f4fd4c779e7a5f994e84ad1
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/StartScreen.unity
     guid: 6657144d14760894397938b4f07cc2f1
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/Login&Register.unity
     guid: c7346bb27619c2f41a9f24f05c39024e
   - enabled: 1
     path: Assets/Scenes/LobbyScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
+  - enabled: 1
+    path: Assets/Scenes/CinematicScene.unity
+    guid: 24917c531cb8d284e94e458c8ec2e37d
   - enabled: 0
     path: Assets/Scenes/Level_1.unity
     guid: f9b52537ba174c94191082d807c136f1

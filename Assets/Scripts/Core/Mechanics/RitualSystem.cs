@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-public class RitualSystem : MonoBehaviourPunCallbacks
+public class RitualSystem : MonoBehaviourPunCallbacks, IOnEventCallback
 {
     [Header("Bell Setup")]
     [SerializeField] private GameObject bellObject;
@@ -18,17 +18,28 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [Header("Flower Offering Setup")]
     [SerializeField] private GameObject shrineObject;
 
-    [Header("Ritual Door")]
+    [Header("Ritual Door 1")]
     [SerializeField] private GameObject ritualDoorClosedModel;
     [SerializeField] private GameObject ritualDoorOpenModel;
     [SerializeField] private Animator ritualDoorAnimator;
     [SerializeField] private string ritualDoorOpenTrigger = "Open";
     [SerializeField] private float ritualDoorOpenAnimationDurationSeconds = 0f;
 
+    [Header("Ritual Door 2")]
+    [SerializeField] private GameObject ritualDoor2ClosedModel;
+    [SerializeField] private GameObject ritualDoor2OpenModel;
+    [SerializeField] private Animator ritualDoor2Animator;
+    [SerializeField] private string ritualDoor2OpenTrigger = "Open";
+    [SerializeField] private float ritualDoor2OpenAnimationDurationSeconds = 0f;
+
 
     [Header("Interaction UI")]
     [SerializeField] private GameObject interactPrompt;
     [SerializeField] private TMP_Text interactPromptText;
+
+    [Header("Debug")]
+    [SerializeField] private bool debugLogs = true;
+    [SerializeField] private float bellInteractionRange = 3f;
 
     [Header("Flower Offering UI")]
     [SerializeField] private GameObject flowerOfferingPanel;
@@ -62,7 +73,15 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     [SerializeField] private Image taskFilledImage;
     [SerializeField] private int initialTaskValue = 0;
 
-    private const int TotalTaskSteps = 5;
+    [Header("Audio")]
+    [SerializeField] private AudioClip bellInteractionSound;
+    [SerializeField] private AudioClip hornInteractionSound;
+    [SerializeField] private AudioClip flowerSmashSound;
+
+    private const int TotalTaskSteps = 3;
+
+    // Photon event codes for rapid network updates
+    private const byte FLOWER_SMASH_EVENT = 1;
 
     private const string BellVisibleKey = "BellVisible";
     private const string BellInteractableKey = "BellInteractable";
@@ -78,6 +97,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private const string RitualTaskValueKey = "RitualTaskValue";
 
     private PlayerControls _localPlayerInRange;
+    private PlayerControls _localPlayerInBellTrigger;
     private float _holdProgress;
 
     private bool _isBellVisible;
@@ -107,10 +127,24 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private bool _hasDoorOpenTrigger;
     private Coroutine _ritualDoorOpenCoroutine;
 
+    private bool _isRitualDoor2Open;
+    private bool _hasDoor2StateInitialized;
+    private int _door2OpenTriggerHash;
+    private bool _hasDoor2OpenTrigger;
+    private Coroutine _ritualDoor2OpenCoroutine;
+
+    // Optimization: throttle objective visibility evaluation to reduce network spam
+    private float _nextVisibilityEvalTime;
+    private const float VISIBILITY_EVAL_THROTTLE = 0.2f;
+    private int _lastCachedVisibilityHash;
+    private AudioSource _audioSource;
+
     private void Awake()
     {
         _doorOpenTriggerHash = string.IsNullOrEmpty(ritualDoorOpenTrigger) ? 0 : Animator.StringToHash(ritualDoorOpenTrigger);
+        _door2OpenTriggerHash = string.IsNullOrEmpty(ritualDoor2OpenTrigger) ? 0 : Animator.StringToHash(ritualDoor2OpenTrigger);
         CacheRitualDoorAnimatorParameters();
+        CacheRitualDoor2AnimatorParameters();
 
         if (bellObjects == null || bellObjects.Length == 0)
         {
@@ -123,6 +157,9 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (bellObjects != null && bellObjects.Length > 0)
         {
             totalRingsRequired = bellObjects.Length;
+
+            _audioSource = gameObject.AddComponent<AudioSource>();
+            _audioSource.playOnAwake = false;
         }
 
         SetBellVisibleLocal(false);
@@ -131,9 +168,15 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         SetPromptVisible(false, string.Empty);
         SetFlowerOfferingPanelVisible(false);
         ApplyRitualDoorVisualState(false);
+        ApplyRitualDoor2VisualState(false);
 
         _taskValue = initialTaskValue;
         UpdateTaskUI();
+    }
+
+    private void OnEnable()
+    {
+        PhotonNetwork.AddCallbackTarget(this);
     }
 
     private void CacheRitualDoorAnimatorParameters()
@@ -159,11 +202,36 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         }
     }
 
+    private void CacheRitualDoor2AnimatorParameters()
+    {
+        _hasDoor2OpenTrigger = false;
+
+        if (ritualDoor2Animator == null)
+        {
+            return;
+        }
+
+        AnimatorControllerParameter[] parameters = ritualDoor2Animator.parameters;
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            AnimatorControllerParameter parameter = parameters[i];
+            if (parameter.type == AnimatorControllerParameterType.Trigger)
+            {
+                if (_door2OpenTriggerHash != 0 && parameter.nameHash == _door2OpenTriggerHash)
+                {
+                    _hasDoor2OpenTrigger = true;
+                }
+            }
+        }
+    }
+
     private void Start()
     {
         SyncFromRoomProperties();
         _hasDoorStateInitialized = true;
+        _hasDoor2StateInitialized = true;
         SetRitualDoorState(false, animateTransition: false);
+        SetRitualDoor2State(false, animateTransition: false);
 
         if (PhotonNetwork.InRoom && PhotonNetwork.IsMasterClient)
         {
@@ -175,11 +243,22 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private void Update()
     {
         UpdateRitualDoorStateFromLampProgress();
+        UpdateRitualDoor2StateFromLampProgress();
+
+        UpdateSecondaryProximityFallback();
+        UpdateBellProximityFallback();
+        UpdateBellTriggerPrompt();
 
         if (PhotonNetwork.IsMasterClient && PhotonNetwork.InRoom)
         {
             EvaluateOfferingTimeoutFromMaster();
-            EvaluateObjectiveVisibilityFromMaster();
+            
+            // Optimization: throttle visibility evaluation to reduce network property updates
+            if (Time.time >= _nextVisibilityEvalTime)
+            {
+                EvaluateObjectiveVisibilityFromMaster();
+                _nextVisibilityEvalTime = Time.time + VISIBILITY_EVAL_THROTTLE;
+            }
         }
 
         if (!IsAnyObjectiveVisible() || !IsLocalPriestEligible())
@@ -190,7 +269,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
-        if (_isBellVisible && !_isBellInteractable)
+        if (IsBellObjectiveActive() && _isBellVisible && !_isBellInteractable)
         {
             SetPromptVisible(false, string.Empty);
             return;
@@ -211,7 +290,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         if (_isSecondaryVisible)
         {
-            SetPromptVisible(true, $"Press E to interact ({_secondaryInteractionsCompleted}/{secondaryInteractionsRequired})");
+            SetPromptVisible(true, "Press 'E' to interact");
             HandleSecondaryInput();
             return;
         }
@@ -227,6 +306,12 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void HandleBellInput()
     {
+        if (_localPlayerInBellTrigger == null)
+        {
+            _holdProgress = 0f;
+            return;
+        }
+
         bool isInteractHeld = Keyboard.current != null && Keyboard.current.eKey.isPressed;
         if (!isInteractHeld)
         {
@@ -242,6 +327,15 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         _holdProgress = 0f;
 
+        if (debugLogs)
+        {
+            int actorNumber = PhotonNetwork.LocalPlayer != null ? PhotonNetwork.LocalPlayer.ActorNumber : -1;
+            Debug.Log($"[RitualSystem] Bell hold completed by actor {actorNumber}. Requesting ring at task step {GetCurrentTaskStep()}.");
+        }
+
+        // Apply local feedback immediately for instant UI response
+        SetPromptVisible(false, "");
+
         if (PhotonNetwork.InRoom)
         {
             photonView.RPC(nameof(RPC_RequestBellRing), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
@@ -254,10 +348,16 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void HandleSecondaryInput()
     {
-        if (!_localPlayerInRange.ConsumeInteractPressed())
+        bool interactPressed = (_localPlayerInRange != null && _localPlayerInRange.ConsumeInteractPressed())
+            || (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame);
+
+        if (!interactPressed)
         {
             return;
         }
+
+        // Apply local feedback immediately for instant UI response
+        SetPromptVisible(false, "");
 
         if (PhotonNetwork.InRoom)
         {
@@ -276,6 +376,9 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
+        // Apply local feedback immediately for instant UI response
+        SetPromptVisible(false, "");
+
         if (PhotonNetwork.InRoom)
         {
             photonView.RPC(nameof(RPC_RequestStartFlowerOffering), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
@@ -290,14 +393,20 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     {
         UpdateFlowerOfferingUi();
 
-        if (Keyboard.current == null || !Keyboard.current.fKey.wasPressedThisFrame)
+        if (Keyboard.current == null || !Keyboard.current.hKey.wasPressedThisFrame)
         {
             return;
         }
 
         if (PhotonNetwork.InRoom)
         {
-            photonView.RPC(nameof(RPC_RequestFlowerSmash), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
+            // Optimization: use Photon event instead of RPC for high-frequency flower smashes
+            PhotonNetwork.RaiseEvent(
+                FLOWER_SMASH_EVENT,
+                new object[] { PhotonNetwork.LocalPlayer.ActorNumber },
+                new RaiseEventOptions(),
+                SendOptions.SendReliable
+            );
         }
         else
         {
@@ -316,6 +425,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         if (playerControls.IsPriest)
         {
             _localPlayerInRange = playerControls;
+
+            if (debugLogs)
+            {
+                Debug.Log($"[RitualSystem] Local priest entered ritual trigger via '{other.name}'.");
+            }
         }
     }
 
@@ -328,12 +442,193 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             _holdProgress = 0f;
             SetPromptVisible(false, string.Empty);
             SetFlowerOfferingPanelVisible(false);
+
+            if (debugLogs)
+            {
+                Debug.Log($"[RitualSystem] Local priest exited ritual trigger via '{other.name}'.");
+            }
         }
     }
 
     private bool IsLocalPriestEligible()
     {
         return _localPlayerInRange != null && _localPlayerInRange.IsPriest;
+    }
+
+    private void UpdateSecondaryProximityFallback()
+    {
+        if (!IsSecondaryObjectiveUnlocked() || !_isSecondaryVisible)
+        {
+            return;
+        }
+
+        if (!TryGetLocalPriest(out PlayerControls localPriest))
+        {
+            return;
+        }
+
+        if (!TryGetCurrentSecondaryInteractionPoint(out Vector3 secondaryPosition))
+        {
+            return;
+        }
+
+        float distance = Vector3.Distance(localPriest.transform.position, secondaryPosition);
+        bool isWithinRange = distance <= Mathf.Max(0.1f, bellInteractionRange);
+
+        if (isWithinRange)
+        {
+            _localPlayerInRange = localPriest;
+        }
+        else if (_localPlayerInRange == localPriest)
+        {
+            _localPlayerInRange = null;
+            SetPromptVisible(false, string.Empty);
+        }
+    }
+
+    private void UpdateBellProximityFallback()
+    {
+        if (!IsBellObjectiveActive() || !_isBellVisible)
+        {
+            return;
+        }
+
+        if (!TryGetLocalPriest(out PlayerControls localPriest))
+        {
+            return;
+        }
+
+        if (!TryGetCurrentBellInteractionPoint(out Vector3 bellPosition))
+        {
+            return;
+        }
+
+        float distance = Vector3.Distance(localPriest.transform.position, bellPosition);
+        bool isWithinRange = distance <= Mathf.Max(0.1f, bellInteractionRange);
+
+        if (isWithinRange)
+        {
+            _localPlayerInBellTrigger = localPriest;
+            _localPlayerInRange = localPriest;
+        }
+        else if (_localPlayerInBellTrigger == localPriest)
+        {
+            _localPlayerInBellTrigger = null;
+            _localPlayerInRange = null;
+            _holdProgress = 0f;
+            SetPromptVisible(false, string.Empty);
+        }
+    }
+
+    private bool TryGetCurrentSecondaryInteractionPoint(out Vector3 secondaryPosition)
+    {
+        secondaryPosition = transform.position;
+
+        if (secondaryTaskObject == null)
+        {
+            return false;
+        }
+
+        Collider secondaryCollider = secondaryTaskObject.GetComponentInChildren<Collider>(true);
+        if (secondaryCollider != null)
+        {
+            secondaryPosition = secondaryCollider.bounds.center;
+            return true;
+        }
+
+        Renderer secondaryRenderer = secondaryTaskObject.GetComponentInChildren<Renderer>(true);
+        if (secondaryRenderer != null)
+        {
+            secondaryPosition = secondaryRenderer.bounds.center;
+            return true;
+        }
+
+        secondaryPosition = secondaryTaskObject.transform.position;
+        return true;
+    }
+
+    private bool TryGetCurrentBellInteractionPoint(out Vector3 bellPosition)
+    {
+        bellPosition = transform.position;
+
+        int bellCount = GetBellSequenceCount();
+        if (bellCount <= 0)
+        {
+            return false;
+        }
+
+        int currentBellIndex = Mathf.Clamp(_completedRings, 0, bellCount - 1);
+        GameObject currentBell = GetBellObject(currentBellIndex);
+        if (currentBell == null)
+        {
+            return false;
+        }
+
+        Collider bellCollider = currentBell.GetComponentInChildren<Collider>(true);
+        if (bellCollider != null)
+        {
+            bellPosition = bellCollider.bounds.center;
+            return true;
+        }
+
+        Renderer bellRenderer = currentBell.GetComponentInChildren<Renderer>(true);
+        if (bellRenderer != null)
+        {
+            bellPosition = bellRenderer.bounds.center;
+            return true;
+        }
+
+        bellPosition = currentBell.transform.position;
+        return true;
+    }
+
+    private bool TryGetLocalPriest(out PlayerControls localPriest)
+    {
+        localPriest = null;
+
+        if (PlayerControls.localPlayerInstance == null)
+        {
+            return false;
+        }
+
+        localPriest = PlayerControls.localPlayerInstance.GetComponent<PlayerControls>();
+        return localPriest != null && localPriest.IsPriest;
+    }
+
+    public void NotifyBellTriggerEntered(PlayerControls playerControls)
+    {
+        if (playerControls == null || playerControls.gameObject != PlayerControls.localPlayerInstance || !playerControls.IsPriest)
+        {
+            return;
+        }
+
+        _localPlayerInBellTrigger = playerControls;
+        UpdateBellTriggerPrompt();
+    }
+
+    public void NotifyBellTriggerExited(PlayerControls playerControls)
+    {
+        if (playerControls == null || playerControls != _localPlayerInBellTrigger)
+        {
+            return;
+        }
+
+        _localPlayerInBellTrigger = null;
+        _holdProgress = 0f;
+        SetPromptVisible(false, string.Empty);
+    }
+
+    private void UpdateBellTriggerPrompt()
+    {
+        if (!IsBellObjectiveActive() || !_isBellVisible || !_isBellInteractable)
+        {
+            return;
+        }
+
+        if (_localPlayerInBellTrigger != null)
+        {
+            SetPromptVisible(true, $"Hold E to ring bell ({_completedRings}/{totalRingsRequired})");
+        }
     }
 
     private bool IsLampRequirementMet()
@@ -453,6 +748,118 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         return 1f;
     }
 
+    private void UpdateRitualDoor2StateFromLampProgress(bool forceInstantState = false)
+    {
+        bool shouldBeOpen = IsLampRequirementMet();
+
+        if (_isRitualDoor2Open)
+        {
+            return;
+        }
+
+        if (!_hasDoor2StateInitialized)
+        {
+            _hasDoor2StateInitialized = true;
+            SetRitualDoor2State(false, animateTransition: false);
+            return;
+        }
+
+        if (!shouldBeOpen)
+        {
+            return;
+        }
+
+        SetRitualDoor2State(true, animateTransition: !forceInstantState);
+    }
+
+    private void SetRitualDoor2State(bool isOpen, bool animateTransition)
+    {
+        _isRitualDoor2Open = isOpen;
+
+        if (!isOpen)
+        {
+            if (_ritualDoor2OpenCoroutine != null)
+            {
+                StopCoroutine(_ritualDoor2OpenCoroutine);
+                _ritualDoor2OpenCoroutine = null;
+            }
+
+            ApplyRitualDoor2VisualState(false);
+            return;
+        }
+
+        if (ritualDoor2Animator == null)
+        {
+            ApplyRitualDoor2VisualState(true);
+            return;
+        }
+
+        if (_hasDoor2OpenTrigger && animateTransition)
+        {
+            ritualDoor2Animator.SetTrigger(_door2OpenTriggerHash);
+        }
+
+        if (_ritualDoor2OpenCoroutine != null)
+        {
+            StopCoroutine(_ritualDoor2OpenCoroutine);
+        }
+
+        _ritualDoor2OpenCoroutine = StartCoroutine(ApplyRitualDoor2OpenAfterDelay(animateTransition));
+    }
+
+    private System.Collections.IEnumerator ApplyRitualDoor2OpenAfterDelay(bool animateTransition)
+    {
+        float waitSeconds = animateTransition ? GetRitualDoor2OpenAnimationDurationSeconds() : 0f;
+        if (waitSeconds > 0f)
+        {
+            yield return new WaitForSeconds(waitSeconds);
+        }
+
+        ApplyRitualDoor2VisualState(true);
+        _ritualDoor2OpenCoroutine = null;
+    }
+
+    private void ApplyRitualDoor2VisualState(bool isOpen)
+    {
+        if (ritualDoor2ClosedModel != null)
+        {
+            ritualDoor2ClosedModel.SetActive(!isOpen);
+        }
+
+        if (ritualDoor2OpenModel != null)
+        {
+            ritualDoor2OpenModel.SetActive(isOpen);
+        }
+    }
+
+    private float GetRitualDoor2OpenAnimationDurationSeconds()
+    {
+        if (ritualDoor2OpenAnimationDurationSeconds > 0f)
+        {
+            return ritualDoor2OpenAnimationDurationSeconds;
+        }
+
+        if (ritualDoor2Animator != null && ritualDoor2Animator.runtimeAnimatorController != null)
+        {
+            AnimationClip[] animationClips = ritualDoor2Animator.runtimeAnimatorController.animationClips;
+            for (int i = 0; i < animationClips.Length; i++)
+            {
+                AnimationClip clip = animationClips[i];
+                if (clip != null && (clip.name == "DoorOpenAnim" || clip.name.IndexOf("Open", System.StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return Mathf.Max(0.1f, clip.length);
+                }
+            }
+
+            if (animationClips.Length > 0 && animationClips[0] != null)
+            {
+                return Mathf.Max(0.1f, animationClips[0].length);
+            }
+        }
+
+        return 1f;
+    }
+
     private bool IsAnyObjectiveVisible()
     {
         return GetCurrentTaskStep() < TotalTaskSteps;
@@ -499,6 +906,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
     private void EvaluateObjectiveVisibilityFromMaster()
     {
         int currentTaskStep = GetCurrentTaskStep();
+
+        if (debugLogs)
+        {
+            Debug.Log($"[RitualSystem] Evaluating objective visibility. TaskStep={currentTaskStep}, BellVisible={_isBellVisible}, BellInteractable={_isBellInteractable}, SecondaryVisible={_isSecondaryVisible}, ShrineVisible={_isShrineVisible}, BellCoolingDown={_isBellCoolingDown}, LampReady={IsLampRequirementMet()}");
+        }
 
         if (currentTaskStep >= TotalTaskSteps)
         {
@@ -611,12 +1023,27 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
         if (!_isBellVisible || _isBellCoolingDown || !IsBellObjectiveActive() || !IsLampRequirementMet())
         {
+            if (debugLogs)
+            {
+                Debug.LogWarning($"[RitualSystem] Rejecting bell ring request from actor {actorNumber}. Visible={_isBellVisible}, CoolingDown={_isBellCoolingDown}, ObjectiveActive={IsBellObjectiveActive()}, LampReady={IsLampRequirementMet()}, SenderMatches={(info.Sender != null && info.Sender.ActorNumber == actorNumber)}");
+            }
+
             return;
         }
 
         if (info.Sender == null || info.Sender.ActorNumber != actorNumber)
         {
+            if (debugLogs)
+            {
+                Debug.LogWarning($"[RitualSystem] Rejecting bell ring request from actor {actorNumber} because the sender did not match.");
+            }
+
             return;
+        }
+
+        if (debugLogs)
+        {
+            Debug.Log($"[RitualSystem] Accepted bell ring request from actor {actorNumber}.");
         }
 
         HandleBellRingAccepted();
@@ -716,39 +1143,55 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         _completedRings = Mathf.Clamp(_completedRings + 1, 0, totalRingsRequired);
         SetRoomRingCount(_completedRings);
         SetBellInteractable(false);
+        
+            if (bellInteractionSound != null && _audioSource != null)
+            {
+                _audioSource.PlayOneShot(bellInteractionSound);
+            }
 
-        bool isObjectiveComplete = !IsBellObjectiveActive();
+        int bellCount = GetBellSequenceCount();
+        bool allBellsRung = bellCount > 0 && _completedRings >= bellCount;
 
-        if (!isObjectiveComplete)
+        if (allBellsRung)
         {
+            // Hide all bells immediately and prepare the secondary (horn) to appear after the reveal delay
+            SetBellVisible(false);
+            SetBellInteractable(false);
+
+            SetRoomSecondaryCount(0);
+            double now = PhotonNetwork.InRoom ? PhotonNetwork.Time : Time.timeAsDouble;
+            SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
+            SetRoomSecondaryVisible(false);
+
+            SetRoomTaskValue(_taskValue + 1);
+
+            StopBellCooldown();
+            EvaluateObjectiveVisibilityFromMaster();
             return;
         }
 
-        SetRoomTaskValue(_taskValue + 1);
-
-        if (currentTaskStep == 0)
-        {
-            SetRoomSecondaryCount(0);
-            double now = PhotonNetwork.Time;
-            SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
-            SetRoomSecondaryVisible(false);
-        }
-        else if (currentTaskStep == 4)
-        {
-            SetRoomSecondaryVisible(false);
-            SetShrineVisible(false);
-        }
-
-        StopBellCooldown();
+        // Not all bells rung yet: start a cooldown before the next bell can be rung
+        StartBellCooldown();
         EvaluateObjectiveVisibilityFromMaster();
     }
 
     private void HandleSecondaryInteractionAccepted()
     {
         int currentTaskStep = GetCurrentTaskStep();
-        _secondaryInteractionsCompleted = Mathf.Clamp(_secondaryInteractionsCompleted + 1, 0, secondaryInteractionsRequired);
+        _secondaryInteractionsCompleted = Mathf.Max(1, secondaryInteractionsRequired);
         SetRoomSecondaryCount(_secondaryInteractionsCompleted);
+
+                if (hornInteractionSound != null && _audioSource != null)
+                {
+                    _audioSource.PlayOneShot(hornInteractionSound);
+                }
         SetSecondaryVisible(false);
+
+        if (debugLogs)
+        {
+            int actorNumber = PhotonNetwork.LocalPlayer != null ? PhotonNetwork.LocalPlayer.ActorNumber : -1;
+            Debug.Log($"[RitualSystem] Secondary interaction accepted at task step {currentTaskStep}. Horn hidden, advancing to next step.");
+        }
 
         if (IsSecondaryObjectiveComplete())
         {
@@ -779,6 +1222,11 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         _offeringSmashCount = Mathf.Clamp(_offeringSmashCount + 1, 0, Mathf.Max(1, smashesRequired));
         SetRoomOfferingSmashCount(_offeringSmashCount);
 
+        if (flowerSmashSound != null && _audioSource != null)
+        {
+            _audioSource.PlayOneShot(flowerSmashSound);
+        }
+
         if (_offeringSmashCount >= Mathf.Max(1, smashesRequired))
         {
             HandleFlowerOfferingCompleted();
@@ -800,6 +1248,14 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         SetRoomOfferingActive(false);
         SetShrineVisible(false);
         SetRoomTaskValue(_taskValue + 1);
+
+        // If this completes the ritual sequence, set a high sentinel value
+        // so the centralized GameEndManager detects the priests' victory.
+        if (GetCurrentTaskStep() >= TotalTaskSteps)
+        {
+            const int ritualCompletionSentinel = 9999;
+            SetRoomTaskValue(ritualCompletionSentinel);
+        }
         SetRoomSecondaryCount(0);
         double now = PhotonNetwork.Time;
         SetRoomSecondaryUnlockTime(now + Mathf.Max(0f, secondaryRevealDelaySeconds));
@@ -1099,6 +1555,40 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         EvaluateObjectiveVisibilityFromMaster();
     }
 
+    void IOnEventCallback.OnEvent(EventData photonEvent)
+    {
+        if (photonEvent.Code == FLOWER_SMASH_EVENT)
+        {
+            if (!PhotonNetwork.IsMasterClient)
+            {
+                return;
+            }
+
+            object[] data = (object[])photonEvent.CustomData;
+            if (data.Length > 0 && data[0] is int actorNumber)
+            {
+                // Optimization: process flower smash event without full RPC validation overhead
+                if (!_isFlowerOfferingActive)
+                {
+                    return;
+                }
+
+                if (!IsPriestActor(actorNumber))
+                {
+                    return;
+                }
+
+                if (PhotonNetwork.Time >= _offeringEndTime)
+                {
+                    HandleFlowerOfferingFailed();
+                    return;
+                }
+
+                HandleFlowerSmashAccepted();
+            }
+        }
+    }
+
     private void SyncFromRoomProperties()
     {
         if (!PhotonNetwork.InRoom)
@@ -1244,6 +1734,12 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
+        // Optimization: only broadcast if state actually changed
+        if (_isBellVisible == isVisible)
+        {
+            return;
+        }
+
         Hashtable updatedProperties = new Hashtable
         {
             { BellVisibleKey, isVisible }
@@ -1261,6 +1757,12 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         }
 
         if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        // Optimization: only broadcast if state actually changed
+        if (_isBellInteractable == isInteractable)
         {
             return;
         }
@@ -1306,6 +1808,15 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         {
             return;
         }
+
+        // Optimization: only broadcast if state actually changed
+        if (_isSecondaryVisible == isVisible)
+        {
+            return;
+        }
+
+        // Apply locally immediately on master so UI updates are not delayed.
+        SetSecondaryVisibleLocal(isVisible);
 
         Hashtable updatedProperties = new Hashtable
         {
@@ -1371,6 +1882,12 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         }
 
         if (!PhotonNetwork.IsMasterClient)
+        {
+            return;
+        }
+
+        // Optimization: only broadcast if state actually changed
+        if (_isShrineVisible == isVisible)
         {
             return;
         }
@@ -1481,6 +1998,10 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             return;
         }
 
+        // Apply locally first so objective switching is immediate on the authority.
+        _taskValue = taskValue;
+        UpdateTaskUI();
+
         Hashtable updatedProperties = new Hashtable
         {
             { RitualTaskValueKey, taskValue }
@@ -1546,7 +2067,15 @@ public class RitualSystem : MonoBehaviourPunCallbacks
                 Collider bellCollider = bellColliders[colliderIndex];
                 if (bellCollider != null)
                 {
+                    BellInteractionTrigger bellTrigger = bellCollider.GetComponent<BellInteractionTrigger>();
+                    if (bellTrigger == null)
+                    {
+                        bellTrigger = bellCollider.gameObject.AddComponent<BellInteractionTrigger>();
+                    }
+
+                    bellTrigger.Initialize(this);
                     bellCollider.enabled = shouldBeInteractable;
+                    bellCollider.isTrigger = true;
                 }
             }
         }
@@ -1554,11 +2083,17 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void SetBellVisibleLocal(bool isVisible)
     {
+        if (debugLogs && _isBellVisible != isVisible)
+        {
+            Debug.Log($"[RitualSystem] Bell visibility set to {isVisible}. CompletedRings={_completedRings}, Interactable={_isBellInteractable}, LampReady={IsLampRequirementMet()}");
+        }
+
         _isBellVisible = isVisible;
 
         if (!isVisible)
         {
             _holdProgress = 0f;
+            _localPlayerInBellTrigger = null;
         }
 
         RefreshBellSequenceState();
@@ -1566,11 +2101,17 @@ public class RitualSystem : MonoBehaviourPunCallbacks
 
     private void SetBellInteractableLocal(bool isInteractable)
     {
+        if (debugLogs && _isBellInteractable != isInteractable)
+        {
+            Debug.Log($"[RitualSystem] Bell interactable set to {isInteractable}. Visible={_isBellVisible}, CoolingDown={_isBellCoolingDown}, LampReady={IsLampRequirementMet()}");
+        }
+
         _isBellInteractable = isInteractable;
 
         if (!isInteractable)
         {
             _holdProgress = 0f;
+            _localPlayerInBellTrigger = null;
         }
 
         RefreshBellSequenceState();
@@ -1641,7 +2182,7 @@ public class RitualSystem : MonoBehaviourPunCallbacks
             flowerOfferingTimerText.text = Mathf.CeilToInt(remaining).ToString();
         }
 
-        SetPromptVisible(true, "Smash F");
+        SetPromptVisible(true, "Smash H");
     }
 
     private void UpdateTaskUI()
@@ -1719,8 +2260,10 @@ public class RitualSystem : MonoBehaviourPunCallbacks
         return false;
     }
 
-    private void OnDisable()
+    public override void OnDisable()
     {
+        PhotonNetwork.RemoveCallbackTarget(this);
+
         _localPlayerInRange = null;
         _holdProgress = 0f;
 

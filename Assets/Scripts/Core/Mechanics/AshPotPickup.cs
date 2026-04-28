@@ -1,5 +1,6 @@
 using Photon.Pun;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class AshPotPickup : MonoBehaviourPunCallbacks
 {
@@ -7,6 +8,7 @@ public class AshPotPickup : MonoBehaviourPunCallbacks
     private float pickupDistance = 3f;
 
     public int SourcePlayerViewId { get; private set; } = -1;
+    private bool _localPlayerNearby = false;
 
     public void Initialize(int sourcePlayerViewId)
     {
@@ -20,16 +22,65 @@ public class AshPotPickup : MonoBehaviourPunCallbacks
 
     public void RequestPickup()
     {
-        Debug.Log($"[AshPotPickup.RequestPickup] Called. PhotonView: {(photonView != null ? "OK" : "NULL")}, LocalPlayer: {(PhotonNetwork.LocalPlayer != null ? PhotonNetwork.LocalPlayer.NickName : "NULL")}");
-        
         if (photonView == null || PhotonNetwork.LocalPlayer == null)
         {
-            Debug.LogWarning("[AshPotPickup.RequestPickup] PhotonView or LocalPlayer is null, aborting pickup request");
             return;
         }
 
-        Debug.Log($"[AshPotPickup.RequestPickup] Sending RPC to master client. ActorNumber: {PhotonNetwork.LocalPlayer.ActorNumber}");
         photonView.RPC(nameof(RPC_RequestPickup), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
+    }
+
+    private void Update()
+    {
+        if (PlayerControls.localPlayerInstance == null)
+        {
+            if (_localPlayerNearby)
+            {
+                _localPlayerNearby = false;
+                ClearPickupPrompt();
+            }
+
+            return;
+        }
+
+        Vector3 playerPos = PlayerControls.localPlayerInstance.transform.position;
+        float distance = Vector3.Distance(playerPos, transform.position);
+        bool nearby = distance <= Mathf.Max(0.1f, pickupDistance);
+
+        if (nearby && !_localPlayerNearby)
+        {
+            _localPlayerNearby = true;
+            ShowPickupPrompt();
+        }
+        else if (!nearby && _localPlayerNearby)
+        {
+            _localPlayerNearby = false;
+            ClearPickupPrompt();
+        }
+
+        // Check for F key press to pickup
+        if (nearby && Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
+        {
+            RequestPickup();
+        }
+    }
+
+    private void ShowPickupPrompt()
+    {
+        if (TestConnectionText.TestUI != null)
+        {
+            TestConnectionText ui = TestConnectionText.TestUI.GetComponent<TestConnectionText>();
+            ui?.DisplayPickupPrompt("Press F to pickup");
+        }
+    }
+
+    private void ClearPickupPrompt()
+    {
+        if (TestConnectionText.TestUI != null)
+        {
+            TestConnectionText ui = TestConnectionText.TestUI.GetComponent<TestConnectionText>();
+            ui?.ClearPickupPrompt();
+        }
     }
 
     [PunRPC]
@@ -41,37 +92,27 @@ public class AshPotPickup : MonoBehaviourPunCallbacks
     [PunRPC]
     private void RPC_RequestPickup(int requestingActorNumber)
     {
-        Debug.Log($"[AshPotPickup.RPC_RequestPickup] Called. IsMasterClient: {PhotonNetwork.IsMasterClient}, ActorNumber: {requestingActorNumber}");
-        
         if (!PhotonNetwork.IsMasterClient)
         {
-            Debug.Log("[AshPotPickup.RPC_RequestPickup] Not master client, ignoring");
             return;
         }
 
         if (!TryGetRequestingPriest(requestingActorNumber, out PlayerControls requestingPlayer))
         {
-            Debug.LogWarning($"[AshPotPickup.RPC_RequestPickup] Could not find requesting priest with ActorNumber {requestingActorNumber}");
             return;
         }
 
-        Debug.Log($"[AshPotPickup.RPC_RequestPickup] Found priest: {requestingPlayer.photonView.Owner?.NickName}. HasAshPot: {requestingPlayer.HasAshPot}");
-
         if (requestingPlayer.HasAshPot)
         {
-            Debug.LogWarning($"[AshPotPickup.RPC_RequestPickup] Priest already has ash pot, rejecting");
             return;
         }
 
         float distance = Vector3.Distance(requestingPlayer.transform.position, transform.position);
-        Debug.Log($"[AshPotPickup.RPC_RequestPickup] Distance: {distance:F2}m, PickupDistance: {pickupDistance}m");
         if (distance > pickupDistance)
         {
-            Debug.LogWarning($"[AshPotPickup.RPC_RequestPickup] Priest too far away (distance: {distance:F2}m > {pickupDistance}m)");
             return;
         }
 
-        Debug.Log($"[AshPotPickup.RPC_RequestPickup] SUCCESS! Setting ash pot carried state and destroying object");
         requestingPlayer.photonView.RPC(nameof(PlayerControls.RPC_SetAshPotCarriedData), RpcTarget.AllBuffered, true, SourcePlayerViewId);
         
         // Disable visibility immediately before destroying
@@ -79,7 +120,6 @@ public class AshPotPickup : MonoBehaviourPunCallbacks
         if (renderer != null)
         {
             renderer.enabled = false;
-            Debug.Log("[AshPotPickup.RPC_RequestPickup] Disabled renderer");
         }
         
         PhotonNetwork.Destroy(gameObject);

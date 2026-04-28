@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 7030428105288857117}
   - component: {fileID: 1854066807465273572}
   - component: {fileID: 4755745238689907172}
-  - component: {fileID: 3753024787426753030}
+  - component: {fileID: 1429384789342212469}
   m_Layer: 0
   m_Name: Bell
   m_TagString: Untagged
@@ -29,7 +29,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 21.344, y: 2.135, z: 3.37}
-  m_LocalScale: {x: 0.34025, y: 3.9161, z: 0.33321}
+  m_LocalScale: {x: 15, y: 15, z: 15}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -41,7 +41,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3412469609100939371}
-  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+  m_Mesh: {fileID: 5231628063034189230, guid: 5d8d463a61e907b4fac13703d1c7d0e4, type: 3}
 --- !u!23 &4755745238689907172
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -65,7 +65,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 73c176f402d2c2f4d929aa5da7585d17, type: 2}
+  - {fileID: 2100000, guid: 46e0b8c835ed20c4896bd3a07e72f57d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -87,7 +87,7 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!65 &3753024787426753030
+--- !u!65 &1429384789342212469
 BoxCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -106,5 +106,5 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 4.6241493, y: 1, z: 4.0134478}
-  m_Center: {x: 0.07154958, y: 0, z: 0.28653377}
+  m_Size: {x: 0.28520998, y: 0.40930203, z: 0.20791003}
+  m_Center: {x: 0.020679444, y: -0.07696851, z: 0.05757875}
