@@ -22,6 +22,10 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     public TMPro.TMP_Text playerCountText;
     [Header("Room List Style")]
     [SerializeField] private TMP_FontAsset roomListFont;
+    
+    [Header("Panel Management")]
+    [SerializeField] private GameObject lobbyPanel;
+    [SerializeField] private GameObject controlsPanel;
 
     private string gameVer = "0.0";
     private List<RoomInfo>roomsInfo = new List<RoomInfo>();
@@ -237,6 +241,56 @@ public class LobbyMenu : MonoBehaviourPunCallbacks
     {
         statusText.text = "Join room failed: " + message;
         RefreshLobby();
+    }
+
+    /// <summary>
+    /// Shows the controls panel and hides the lobby panel.
+    /// Wire this to the Controls button's OnClick event.
+    /// </summary>
+    public void ShowControlsPanel()
+    {
+        if (controlsPanel != null)
+        {
+            controlsPanel.SetActive(true);
+        }
+
+        if (lobbyPanel != null)
+        {
+            lobbyPanel.SetActive(false);
+        }
+    }
+
+    /// <summary>
+    /// Shows the lobby panel and hides the controls panel.
+    /// Wire this to the Back button's OnClick event.
+    /// </summary>
+    public void ShowLobbyPanel()
+    {
+        if (lobbyPanel != null)
+        {
+            lobbyPanel.SetActive(true);
+        }
+
+        if (controlsPanel != null)
+        {
+            controlsPanel.SetActive(false);
+        }
+    }
+
+    /// <summary>
+    /// Generic panel swap function. Disables panelToHide and enables panelToShow.
+    /// </summary>
+    public void SwapPanels(GameObject panelToHide, GameObject panelToShow)
+    {
+        if (panelToHide != null)
+        {
+            panelToHide.SetActive(false);
+        }
+
+        if (panelToShow != null)
+        {
+            panelToShow.SetActive(true);
+        }
     }
 
 }

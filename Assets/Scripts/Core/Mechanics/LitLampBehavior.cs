@@ -7,11 +7,13 @@ public class LitLampBehavior : MonoBehaviour
     public GameObject Light;
     [SerializeField] private GameObject interactPrompt;
     [SerializeField] private bool debugLogs = true;
+    [SerializeField] private AudioClip lampInteractSound;
 
     private bool _isLit = false;
     private PlayerControls _localPlayerInRange;
     private PhotonView _photonView;
     private UnityEngine.Light _pointLight;
+    private AudioSource audioSource;
 
     public bool IsLit => GetCurrentLitState();
 
@@ -22,6 +24,9 @@ public class LitLampBehavior : MonoBehaviour
 
         _isLit = false;
         ApplyLightState(_isLit);
+
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
 
         if (debugLogs)
         {
@@ -70,6 +75,11 @@ public class LitLampBehavior : MonoBehaviour
 
         if (_localPlayerInRange.ConsumeInteractPressed())
         {
+            if (lampInteractSound != null && audioSource != null)
+            {
+                audioSource.PlayOneShot(lampInteractSound);
+            }
+
             bool targetLitState = !GetCurrentLitState();
 
             if (PhotonNetwork.InRoom && _photonView != null && _photonView.ViewID != 0)

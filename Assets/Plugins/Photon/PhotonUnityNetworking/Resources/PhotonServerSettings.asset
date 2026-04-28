@@ -75,6 +75,9 @@ MonoBehaviour:
   - RPC_PlayAttackAnimation
   - RPC_SetSpawnPosition
   - RPC_RequestExtinguishLamp
+  - RPC_SetFlowerCount
+  - RPC_RequestPriestRespawn
+  - RPC_TeleportPriest
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 1

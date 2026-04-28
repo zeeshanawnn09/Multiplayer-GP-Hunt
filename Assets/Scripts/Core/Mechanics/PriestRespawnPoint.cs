@@ -16,17 +16,24 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
     private float interactionDistance = 3f;
 
     [SerializeField]
-    private Transform[] respawnPoints;
+    private Transform respawnPoint;
+
+    [SerializeField]
+    private float proximityCheckDistance = 3f;
 
     private PlayerControls _localPlayerInRange;
+    private Collider _triggerCollider;
 
     private void Awake()
     {
         SetPromptVisible(false);
+        _triggerCollider = GetComponent<Collider>();
     }
 
     private void Update()
     {
+        UpdateProximityDetection();
+
         // Check if local player with ash pot is in range
         if (_localPlayerInRange == null)
         {
@@ -42,6 +49,39 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
 
         SetPromptVisible(true);
         HandleRespawnInput();
+    }
+
+    private void UpdateProximityDetection()
+    {
+        // Use distance-based check since CharacterController doesn't trigger OnTrigger events
+        if (PlayerControls.localPlayerInstance == null)
+        {
+            _localPlayerInRange = null;
+            return;
+        }
+
+        PlayerControls localPlayer = PlayerControls.localPlayerInstance.GetComponent<PlayerControls>();
+        if (localPlayer == null)
+        {
+            _localPlayerInRange = null;
+            return;
+        }
+
+        Vector3 playerPos = PlayerControls.localPlayerInstance.transform.position;
+        Vector3 respawnPos = transform.position;
+        float distanceToPlayer = Vector3.Distance(playerPos, respawnPos);
+
+        if (distanceToPlayer <= proximityCheckDistance)
+        {
+            _localPlayerInRange = localPlayer;
+        }
+        else
+        {
+            if (_localPlayerInRange == localPlayer)
+            {
+                _localPlayerInRange = null;
+            }
+        }
     }
 
     private void HandleRespawnInput()
@@ -120,7 +160,7 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
             return;
         }
 
-        Vector3 respawnPosition = GetRandomRespawnPosition();
+        Vector3 respawnPosition = GetRespawnPosition();
 
         Debug.Log($"[PriestRespawnPoint.RPC_RequestRespawn] SUCCESS! Respawning priest {deadPriest.photonView.Owner?.NickName} at position {respawnPosition}");
 
@@ -145,69 +185,13 @@ public class PriestRespawnPoint : MonoBehaviourPunCallbacks
         }
     }
 
-    private Vector3 GetRandomRespawnPosition()
+    private Vector3 GetRespawnPosition()
     {
-        if (respawnPoints == null || respawnPoints.Length == 0)
+        if (respawnPoint != null)
         {
-            return transform.position;
+            return respawnPoint.position;
         }
-
-        int validPointCount = 0;
-        for (int i = 0; i < respawnPoints.Length; i++)
-        {
-            if (respawnPoints[i] != null)
-            {
-                validPointCount++;
-            }
-        }
-
-        if (validPointCount == 0)
-        {
-            return transform.position;
-        }
-
-        int randomValidIndex = Random.Range(0, validPointCount);
-        int currentValidIndex = 0;
-
-        for (int i = 0; i < respawnPoints.Length; i++)
-        {
-            Transform point = respawnPoints[i];
-            if (point == null)
-            {
-                continue;
-            }
-
-            if (currentValidIndex == randomValidIndex)
-            {
-                return point.position;
-            }
-
-            currentValidIndex++;
-        }
-
         return transform.position;
-    }
-
-    private void OnTriggerEnter(Collider other)
-    {
-        PlayerControls playerControls = other.GetComponentInParent<PlayerControls>();
-        if (playerControls != null && playerControls.photonView.IsMine)
-        {
-            _localPlayerInRange = playerControls;
-            Debug.Log($"[PriestRespawnPoint] Local player entered respawn point range");
-            return;
-        }
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        PlayerControls playerControls = other.GetComponentInParent<PlayerControls>();
-        if (playerControls != null && playerControls.photonView.IsMine && _localPlayerInRange == playerControls)
-        {
-            _localPlayerInRange = null;
-            Debug.Log($"[PriestRespawnPoint] Local player exited respawn point range");
-            return;
-        }
     }
 
     private void SetPromptVisible(bool isVisible)

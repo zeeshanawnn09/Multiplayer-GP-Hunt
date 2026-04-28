@@ -1467,7 +1467,7 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -3735265817966314513, guid: 84a36379f7b2d9840aacb202c1ebde28, type: 3}
+  - {fileID: 2100000, guid: ccb761b1d1e24164eb896413b8d112a7, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2580,7 +2580,6 @@ GameObject:
   - component: {fileID: 9116389031716398742}
   - component: {fileID: 4514379010366019884}
   - component: {fileID: 6286754230167560146}
-  - component: {fileID: 8545817734957597982}
   m_Layer: 0
   m_Name: PlayerCapsule
   m_TagString: Player
@@ -2676,6 +2675,7 @@ MonoBehaviour:
   logImmobilizeTimer: 0
   projectileDamage: 10
   fireCooldownSeconds: 0.2
+  fireProjectileSound: {fileID: 8300000, guid: f5dff385af8a6a24997ab39e1caf7307, type: 3}
   priestBurstShotLimit: 5
   priestBurstCooldownSeconds: 10
   ghostBurstShotLimit: 10
@@ -2935,6 +2935,7 @@ MonoBehaviour:
   ghostRespawnDelaySeconds: 3
   ashPotPrefab: {fileID: 7008286566985781076, guid: 84f29d560231aee4bb4bb9a9b712217d, type: 3}
   ashPotSpawnOffset: {x: 0, y: 0.2, z: 0}
+  debugLogs: 1
 --- !u!114 &4514379010366019884
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2966,33 +2967,6 @@ MonoBehaviour:
   cooldownSeconds: 3
   shieldVisualRoot: {fileID: 2707945285555273108}
   shieldCooldownText: {fileID: 0}
---- !u!54 &8545817734957597982
-Rigidbody:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4879892127143676765}
-  serializedVersion: 4
-  m_Mass: 1
-  m_Drag: 0
-  m_AngularDrag: 0.05
-  m_CenterOfMass: {x: 0, y: 0, z: 0}
-  m_InertiaTensor: {x: 1, y: 1, z: 1}
-  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ImplicitCom: 1
-  m_ImplicitTensor: 1
-  m_UseGravity: 0
-  m_IsKinematic: 1
-  m_Interpolate: 0
-  m_Constraints: 0
-  m_CollisionDetection: 0
 --- !u!1 &4977526930669068672
 GameObject:
   m_ObjectHideFlags: 0
@@ -3625,8 +3599,8 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 4083810080818326735, guid: ff391bb376e667b4e89208414a187a5d, type: 3}
-  - {fileID: -542846281537340719, guid: ff391bb376e667b4e89208414a187a5d, type: 3}
+  - {fileID: 2100000, guid: 980eebabacfa3824396e03168b5f03da, type: 2}
+  - {fileID: 2100000, guid: 980eebabacfa3824396e03168b5f03da, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

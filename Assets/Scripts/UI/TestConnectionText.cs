@@ -2,6 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Photon.Pun;
+using ExitGames.Client.Photon;
 
 public class TestConnectionText : MonoBehaviourPunCallbacks
 {
@@ -16,6 +17,11 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
     public TMP_Text vineCountText;
     public TMP_Text bloodPoolCountText;
     public TMP_Text burstCooldownText;
+    public TMP_Text pickupPromptText;
+    public TMP_Text soulPickupDebugText;
+
+    [SerializeField]
+    private bool debugLogs = true;
 
     public static GameObject TestUI;
 
@@ -33,6 +39,8 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
             TestUI = this.gameObject;
             Debug.LogWarning("TestUI was null in Start, setting it now");
         }
+
+        RefreshFlowerCountFromRoom();
     }
 
     // Update is called once per frame
@@ -110,6 +118,60 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
         }
     }
 
+    public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
+    {
+        if (propertiesThatChanged == null || !propertiesThatChanged.ContainsKey(PlayerControls.FlowerCountRoomPropertyKey))
+        {
+            return;
+        }
+
+        RefreshFlowerCountFromRoom();
+    }
+
+    private void RefreshFlowerCountFromRoom()
+    {
+        if (flowerCountText == null)
+        {
+            return;
+        }
+
+        int currentCount = 0;
+        bool hasFlowerCount = false;
+
+        if (PhotonNetwork.CurrentRoom != null
+            && PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(PlayerControls.FlowerCountRoomPropertyKey, out object value)
+            && value is int storedCount)
+        {
+            hasFlowerCount = true;
+            currentCount = storedCount;
+        }
+
+        PlayerControls localPlayer = null;
+        if (PlayerControls.localPlayerInstance != null)
+        {
+            localPlayer = PlayerControls.localPlayerInstance.GetComponent<PlayerControls>();
+        }
+
+        if (localPlayer == null || !localPlayer.IsPriest)
+        {
+            ClearFlowerCount();
+
+            if (debugLogs)
+            {
+                Debug.Log($"[TestConnectionText] Flower count cleared. Local priest ready={localPlayer != null && localPlayer.IsPriest}, HasValue={hasFlowerCount}, Value={currentCount}");
+            }
+
+            return;
+        }
+
+        DisplayFlowerCount(currentCount);
+
+        if (debugLogs)
+        {
+            Debug.Log($"[TestConnectionText] Flower count refreshed to {currentCount} for local priest '{localPlayer.name}'.");
+        }
+    }
+
     public void ClearFlowerCount()
     {
         if (flowerCountText != null)
@@ -179,6 +241,38 @@ public class TestConnectionText : MonoBehaviourPunCallbacks
         if (soulCountText != null)
         {
             soulCountText.text = string.Empty;
+        }
+    }
+
+    public void DisplayPickupPrompt(string prompt)
+    {
+        if (pickupPromptText != null)
+        {
+            pickupPromptText.text = prompt;
+        }
+    }
+
+    public void ClearPickupPrompt()
+    {
+        if (pickupPromptText != null)
+        {
+            pickupPromptText.text = string.Empty;
+        }
+    }
+
+    public void DisplaySoulPickupDebug(string debugMessage)
+    {
+        if (soulPickupDebugText != null)
+        {
+            soulPickupDebugText.text = debugMessage;
+        }
+    }
+
+    public void ClearSoulPickupDebug()
+    {
+        if (soulPickupDebugText != null)
+        {
+            soulPickupDebugText.text = string.Empty;
         }
     }
 }

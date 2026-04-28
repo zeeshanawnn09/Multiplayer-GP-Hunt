@@ -350,6 +350,57 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1049573338}
   m_CullTransparentMesh: 1
+--- !u!1 &1084269362
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1084269364}
+  - component: {fileID: 1084269363}
+  m_Layer: 0
+  m_Name: AudioManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1084269363
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1084269362}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de2c68d30a54e744d838c53e29ccc7c8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  sceneMusicList:
+  - sceneName: StartScreen
+    clip: {fileID: 8300000, guid: 8307fd5b62901c048ac531c25d408a10, type: 3}
+  - sceneName: Login&Register
+    clip: {fileID: 8300000, guid: 8307fd5b62901c048ac531c25d408a10, type: 3}
+  - sceneName: LobbyScene
+    clip: {fileID: 8300000, guid: 8307fd5b62901c048ac531c25d408a10, type: 3}
+--- !u!4 &1084269364
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1084269362}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1162780024
 GameObject:
   m_ObjectHideFlags: 0
@@ -833,7 +884,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b7758892fddd03f4499e0e02b928ae3e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sceneName: Login&Register
+  sceneName: CinematicScene
   loadOnAnyKey: 1
   blinkingText: {fileID: 1162780026}
   blinkSpeed: 2
@@ -846,3 +897,4 @@ SceneRoots:
   - {fileID: 1355576733}
   - {fileID: 2106661639}
   - {fileID: 442636408}
+  - {fileID: 1084269364}
