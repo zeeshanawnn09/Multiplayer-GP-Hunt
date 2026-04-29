@@ -1,5 +1,9 @@
-# RITES 🪔
+# RITES 
 ### *Asymmetrical PvP — 3v1 Multiplayer Horror Experience*
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zeeshanawnn09/Multiplayer-GP-Hunt/main/Thumbnail.jpg" alt="Rites Thumbnail" width="100%"/>
+</p>
 
 > **Worship or Haunt?** — 4 Players | South Indian Temple Setting | PC Multiplayer
 
